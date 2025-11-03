@@ -1,0 +1,45 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+*.egg-info/
+.dist/
+build/
+
+# Medical imaging data (large files)
+Task01_BrainTumour/
+results/
+*.nii.gz
+*.nii
+
+# Mesh files (generated outputs)
+*.stl
+*.obj
+*.mtl
+*.ply
+*.glb
+test_meshes/
+downloaded_meshes/
+
+# System files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Build artifacts
+dist/
+orchestration/dist/
+*.tsbuildinfo
+*.js.map
+
+# Logs
+*.log
+logs/

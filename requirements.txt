@@ -1,0 +1,7 @@
+# This project uses separate dependencies for each component:
+# - imaging-worker/requirements.txt for Python dependencies
+# - orchestration/package.json for Node.js dependencies
+
+# To install:
+# cd imaging-worker && pip install -e ".[dev]"
+# cd orchestration && npm install

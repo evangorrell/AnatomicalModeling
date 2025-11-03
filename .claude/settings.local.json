@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(imaging-worker/.venv/bin/python:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

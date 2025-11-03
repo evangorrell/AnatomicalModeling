@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Mesh Viewer - Brain & Tumor</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        #container {
+            width: 100vw;
+            height: 100vh;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 5px;
+            max-width: 300px;
+        }
+        h1 {
+            margin: 0 0 10px 0;
+            font-size: 20px;
+        }
+        .controls {
+            margin-top: 15px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .file-input {
+            margin: 10px 0;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        label {
+            background: #2196F3;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 3px;
+            cursor: pointer;
+            display: inline-block;
+        }
+        label:hover {
+            background: #0b7dda;
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <div id="info">
+        <h1>🧠 3D Mesh Viewer</h1>
+        <p id="stats">Load your STL/OBJ files to view</p>
+
+        <div class="file-input">
+            <label for="brain-file">📁 Load Brain</label>
+            <input type="file" id="brain-file" accept=".stl,.obj" />
+        </div>
+
+        <div class="file-input">
+            <label for="tumor-file">📁 Load Tumor</label>
+            <input type="file" id="tumor-file" accept=".stl,.obj" />
+        </div>
+
+        <div class="controls">
+            <button onclick="toggleBrain()">👁️ Toggle Brain</button>
+            <button onclick="toggleTumor()">👁️ Toggle Tumor</button>
+            <button onclick="resetCamera()">🎥 Reset View</button>
+        </div>
+
+        <p style="font-size: 12px; margin-top: 15px; opacity: 0.7;">
+            <strong>Controls:</strong><br>
+            • Rotate: Left click + drag<br>
+            • Zoom: Scroll wheel<br>
+            • Pan: Right click + drag
+        </p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let brainMesh, tumorMesh;
+
+        // Initialize Three.js scene
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a1a);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+            camera.position.set(200, 200, 200);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('container').appendChild(renderer.domElement);
+
+            // Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 2);
+            scene.add(ambientLight);
+
+            const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight1.position.set(1, 1, 1);
+            scene.add(directionalLight1);
+
+            const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight2.position.set(-1, -1, -1);
+            scene.add(directionalLight2);
+
+            // Grid
+            const gridHelper = new THREE.GridHelper(400, 20, 0x444444, 0x222222);
+            scene.add(gridHelper);
+
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize, false);
+
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Load STL or OBJ file
+        function loadMesh(file, color, name) {
+            const reader = new FileReader();
+            const extension = file.name.split('.').pop().toLowerCase();
+
+            reader.onload = function(e) {
+                const contents = e.target.result;
+                let geometry;
+
+                if (extension === 'stl') {
+                    const loader = new THREE.STLLoader();
+                    geometry = loader.parse(contents);
+                } else if (extension === 'obj') {
+                    const loader = new THREE.OBJLoader();
+                    const object = loader.parse(contents);
+                    geometry = object.children[0].geometry;
+                }
+
+                // Center geometry
+                geometry.computeBoundingBox();
+                const center = new THREE.Vector3();
+                geometry.boundingBox.getCenter(center);
+                geometry.translate(-center.x, -center.y, -center.z);
+
+                // Compute normals
+                geometry.computeVertexNormals();
+
+                // Create material
+                const material = new THREE.MeshPhongMaterial({
+                    color: color,
+                    specular: 0x111111,
+                    shininess: 30,
+                    opacity: name === 'brain' ? 0.7 : 1.0,
+                    transparent: name === 'brain',
+                    side: THREE.DoubleSide
+                });
+
+                // Create mesh
+                const mesh = new THREE.Mesh(geometry, material);
+
+                // Remove old mesh if exists
+                if (name === 'brain' && brainMesh) {
+                    scene.remove(brainMesh);
+                }
+                if (name === 'tumor' && tumorMesh) {
+                    scene.remove(tumorMesh);
+                }
+
+                // Add to scene
+                scene.add(mesh);
+
+                // Store reference
+                if (name === 'brain') {
+                    brainMesh = mesh;
+                } else {
+                    tumorMesh = mesh;
+                }
+
+                // Update stats
+                updateStats();
+
+                // Reset camera to fit object
+                resetCamera();
+            };
+
+            if (extension === 'stl') {
+                reader.readAsArrayBuffer(file);
+            } else {
+                reader.readAsText(file);
+            }
+        }
+
+        function updateStats() {
+            let text = '';
+            if (brainMesh) {
+                const brainVerts = brainMesh.geometry.attributes.position.count;
+                const brainFaces = brainMesh.geometry.index ? brainMesh.geometry.index.count / 3 : brainVerts / 3;
+                text += `🧠 Brain: ${brainVerts.toLocaleString()} vertices, ${Math.floor(brainFaces).toLocaleString()} faces<br>`;
+            }
+            if (tumorMesh) {
+                const tumorVerts = tumorMesh.geometry.attributes.position.count;
+                const tumorFaces = tumorMesh.geometry.index ? tumorMesh.geometry.index.count / 3 : tumorVerts / 3;
+                text += `🔴 Tumor: ${tumorVerts.toLocaleString()} vertices, ${Math.floor(tumorFaces).toLocaleString()} faces<br>`;
+            }
+            if (!text) {
+                text = 'Load your STL/OBJ files to view';
+            }
+            document.getElementById('stats').innerHTML = text;
+        }
+
+        function toggleBrain() {
+            if (brainMesh) {
+                brainMesh.visible = !brainMesh.visible;
+            }
+        }
+
+        function toggleTumor() {
+            if (tumorMesh) {
+                tumorMesh.visible = !tumorMesh.visible;
+            }
+        }
+
+        function resetCamera() {
+            // Find bounding box of all visible meshes
+            const box = new THREE.Box3();
+            if (brainMesh && brainMesh.visible) box.expandByObject(brainMesh);
+            if (tumorMesh && tumorMesh.visible) box.expandByObject(tumorMesh);
+
+            if (!box.isEmpty()) {
+                const center = new THREE.Vector3();
+                box.getCenter(center);
+
+                const size = new THREE.Vector3();
+                box.getSize(size);
+
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const fov = camera.fov * (Math.PI / 180);
+                let cameraZ = Math.abs(maxDim / 2 * Math.tan(fov * 2));
+                cameraZ *= 1.5; // Add some padding
+
+                camera.position.set(center.x + cameraZ, center.y + cameraZ, center.z + cameraZ);
+                camera.lookAt(center);
+                controls.target.copy(center);
+                controls.update();
+            }
+        }
+
+        // File input handlers
+        document.getElementById('brain-file').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                loadMesh(file, 0xaaaaaa, 'brain');  // Grey
+            }
+        });
+
+        document.getElementById('tumor-file').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                loadMesh(file, 0xff3333, 'tumor');  // Red
+            }
+        });
+
+        // Initialize scene
+        init();
+    </script>
+</body>
+</html>
