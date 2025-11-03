@@ -57,6 +57,7 @@ export class StudiesService {
       secretAccessKey: this.configService.get('S3_SECRET_KEY'),
       s3ForcePathStyle: this.configService.get('S3_FORCE_PATH_STYLE') === 'true',
       region: this.configService.get('S3_REGION', 'us-east-1'),
+      signatureVersion: 'v4',
     });
   }
 
@@ -133,7 +134,7 @@ export class StudiesService {
         //          Post-processing is ENABLED BY DEFAULT for 3D print-ready output
         console.log('Generating 3D meshes from segmentation...');
         const meshDir = path.join(outputDir, 'meshes');
-        const meshArgs = ['-m', 'src.cli', 'mesh', maskPath, meshDir, '--formats', 'stl,obj', '--step-size', '2'];
+        const meshArgs = ['-m', 'src.cli', 'mesh', maskPath, meshDir, '--formats', 'stl,obj', '--step-size', '1']; // KEEP STEP-SIZE AT 1 FOR WATERTIGHT
         // Note: --no-postprocess flag omitted intentionally (post-processing is default)
 
         try {
@@ -325,12 +326,26 @@ export class StudiesService {
     });
   }
 
-  async getSignedUrl(s3Key: string, expiresIn = 3600): Promise<string> {
-    return this.s3.getSignedUrlPromise('getObject', {
+  async getSignedUrl(s3Key: string, expiresIn = 3600, forceDownload = false): Promise<string> {
+    const params: any = {
       Bucket: this.configService.get('S3_BUCKET'),
       Key: s3Key,
       Expires: expiresIn,
-    });
+    };
+
+    // Note: MinIO has issues with ResponseContentDisposition in presigned URLs
+    // Don't add it here - handle Content-Disposition at the controller level instead
+
+    return this.s3.getSignedUrlPromise('getObject', params);
+  }
+
+  async getS3Object(s3Key: string): Promise<AWS.S3.GetObjectOutput> {
+    const params = {
+      Bucket: this.configService.get('S3_BUCKET'),
+      Key: s3Key,
+    };
+
+    return this.s3.getObject(params).promise();
   }
 
   async getArtifactUrls(studyId: string): Promise<{ studyId: string; artifacts: Record<string, string>; metadata: any }> {
@@ -409,7 +424,7 @@ export class StudiesService {
         break;
     }
 
-    const url = await this.getSignedUrl(s3Key, 3600);
+    const url = await this.getSignedUrl(s3Key, 3600, true); // Force download
     return { url, filename };
   }
 
@@ -450,7 +465,7 @@ export class StudiesService {
       throw new NotFoundException(`Mesh file not found: ${filename}`);
     }
 
-    const url = await this.getSignedUrl(s3Key, 3600);
+    const url = await this.getSignedUrl(s3Key, 3600, true); // Force download
     return { url, filename };
   }
 }
