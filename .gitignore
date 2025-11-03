@@ -43,3 +43,15 @@ orchestration/dist/
 # Logs
 *.log
 logs/
+
+# Node.js
+node_modules/
+
+# Testing
+.coverage
+.pytest_cache/
+coverage/
+
+# Documentation (optional - only if these are redundant)
+# imaging-worker/docs/
+# orchestration/TROUBLESHOOTING.md
