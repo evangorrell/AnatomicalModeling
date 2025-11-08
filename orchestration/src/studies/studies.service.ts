@@ -61,14 +61,9 @@ export class StudiesService {
     });
   }
 
-  async processUpload(file: Express.Multer.File, isNifti: boolean = false): Promise<Study> {
+  async processUpload(file: Express.Multer.File): Promise<Study> {
     const studyId = uuidv4();
-
-    if (isNifti) {
-      return this.processNiftiUpload(file, studyId);
-    } else {
-      return this.processDicomUpload(file, studyId);
-    }
+    return this.processNiftiUpload(file, studyId);
   }
 
   private async processNiftiUpload(file: Express.Multer.File, studyId: string): Promise<Study> {
@@ -212,100 +207,6 @@ export class StudiesService {
     }
   }
 
-  private async processDicomUpload(file: Express.Multer.File, studyId: string): Promise<Study> {
-    const s3Key = `studies/${studyId}/original.zip`;
-
-    // Upload ZIP to S3
-    await this.s3
-      .upload({
-        Bucket: this.configService.get('S3_BUCKET'),
-        Key: s3Key,
-        Body: file.buffer,
-        ContentType: 'application/zip',
-      })
-      .promise();
-
-    // Process DICOM with imaging worker
-    const tempDir = `/tmp/${studyId}`;
-    fs.mkdirSync(tempDir, { recursive: true });
-
-    try {
-      // Save ZIP temporarily
-      const zipPath = path.join(tempDir, 'input.zip');
-      fs.writeFileSync(zipPath, file.buffer);
-
-      // Run imaging worker (Phase A1 pipeline)
-      const pythonPath = this.configService.get('WORKER_PYTHON_PATH', 'python3');
-      const outputDir = path.join(tempDir, 'output');
-      const args = ['-m', 'src.cli', 'pipeline', zipPath, outputDir];
-
-      console.log(`Running: ${pythonPath} ${args.join(' ')}`);
-      const workerDir = path.resolve(process.cwd(), '../imaging-worker');
-      console.log(`Worker directory: ${workerDir}`);
-      const { stdout, stderr } = await this.runPythonCommand(
-        pythonPath,
-        args,
-        workerDir,
-      );
-
-      console.log('Worker output:', stdout);
-      if (stderr) console.error('Worker errors:', stderr);
-
-      // Read metadata
-      const metadataPath = path.join(outputDir, 'metadata.json');
-      const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
-
-      // Upload artifacts to S3
-      const volumePath = path.join(outputDir, 'volume.nii.gz');
-      const volumeS3Key = `studies/${studyId}/volume.nii.gz`;
-
-      await this.s3
-        .upload({
-          Bucket: this.configService.get('S3_BUCKET'),
-          Key: volumeS3Key,
-          Body: fs.readFileSync(volumePath),
-          ContentType: 'application/gzip',
-        })
-        .promise();
-
-      const isotropicPath = path.join(outputDir, 'volume_isotropic.nii.gz');
-      const isotropicS3Key = `studies/${studyId}/volume_isotropic.nii.gz`;
-
-      if (fs.existsSync(isotropicPath)) {
-        await this.s3
-          .upload({
-            Bucket: this.configService.get('S3_BUCKET'),
-            Key: isotropicS3Key,
-            Body: fs.readFileSync(isotropicPath),
-            ContentType: 'application/gzip',
-          })
-          .promise();
-      }
-
-      // Create study record
-      const study = this.studyRepository.create({
-        id: studyId,
-        seriesInstanceUID: metadata.series_uid,
-        sliceCount: metadata.slice_count,
-        modality: metadata.modality,
-        seriesDescription: metadata.series_description,
-        metadata,
-        s3Key,
-        volumeS3Key,
-      });
-
-      await this.studyRepository.save(study);
-
-      // Cleanup temp files
-      fs.rmSync(tempDir, { recursive: true, force: true });
-
-      return study;
-    } catch (error) {
-      // Cleanup on error
-      fs.rmSync(tempDir, { recursive: true, force: true });
-      throw error;
-    }
-  }
 
   async findById(id: string): Promise<Study> {
     const study = await this.studyRepository.findOne({
@@ -326,7 +227,7 @@ export class StudiesService {
     });
   }
 
-  async getSignedUrl(s3Key: string, expiresIn = 3600, forceDownload = false): Promise<string> {
+  async getSignedUrl(s3Key: string, expiresIn = 3600): Promise<string> {
     const params: any = {
       Bucket: this.configService.get('S3_BUCKET'),
       Key: s3Key,
@@ -334,7 +235,7 @@ export class StudiesService {
     };
 
     // Note: MinIO has issues with ResponseContentDisposition in presigned URLs
-    // Don't add it here - handle Content-Disposition at the controller level instead
+    // Downloads are handled by proxying through NestJS with Content-Disposition headers
 
     return this.s3.getSignedUrlPromise('getObject', params);
   }
@@ -424,7 +325,7 @@ export class StudiesService {
         break;
     }
 
-    const url = await this.getSignedUrl(s3Key, 3600, true); // Force download
+    const url = await this.getSignedUrl(s3Key);
     return { url, filename };
   }
 
@@ -465,7 +366,7 @@ export class StudiesService {
       throw new NotFoundException(`Mesh file not found: ${filename}`);
     }
 
-    const url = await this.getSignedUrl(s3Key, 3600, true); // Force download
+    const url = await this.getSignedUrl(s3Key);
     return { url, filename };
   }
 }

@@ -21,8 +21,8 @@ export class StudiesController {
 
   @Post('upload')
   @ApiOperation({
-    summary: 'Upload medical imaging file',
-    description: 'Upload DICOM ZIP (.zip) or NIfTI volume (.nii.gz). ZIP files go through Phase A1 (ingest + resample), NIfTI files skip to Phase A2 (segmentation).'
+    summary: 'Upload NIfTI file',
+    description: 'Upload NIfTI volume (.nii.gz) for automatic segmentation and 3D mesh generation.'
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -32,33 +32,30 @@ export class StudiesController {
         file: {
           type: 'string',
           format: 'binary',
-          description: 'DICOM ZIP or NIfTI file (.nii.gz)',
+          description: 'NIfTI file (.nii.gz or .nii)',
         },
       },
     },
   })
   @UseInterceptors(FileInterceptor('file'))
-  async uploadDicom(@UploadedFile() file: Express.Multer.File) {
+  async uploadNifti(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }
 
-    // Detect file type
-    const isZip = file.mimetype === 'application/zip' || file.originalname.endsWith('.zip');
+    // Only accept NIfTI files
     const isNifti = file.originalname.endsWith('.nii.gz') || file.originalname.endsWith('.nii');
 
-    if (!isZip && !isNifti) {
-      throw new BadRequestException('File must be a ZIP archive (.zip) or NIfTI volume (.nii.gz)');
+    if (!isNifti) {
+      throw new BadRequestException('File must be a NIfTI volume (.nii.gz or .nii)');
     }
 
-    const study = await this.studiesService.processUpload(file, isNifti);
+    const study = await this.studiesService.processUpload(file);
 
     return {
       studyId: study.id,
-      message: isNifti
-        ? 'NIfTI volume uploaded and segmented successfully'
-        : 'DICOM study uploaded and processed successfully',
-      fileType: isNifti ? 'nifti' : 'dicom',
+      message: 'NIfTI volume uploaded and segmented successfully',
+      fileType: 'nifti',
     };
   }
 

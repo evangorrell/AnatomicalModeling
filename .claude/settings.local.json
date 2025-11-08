@@ -3,7 +3,11 @@
     "allow": [
       "Bash(npm run build:*)",
       "Bash(.venv/bin/python:*)",
-      "Bash(imaging-worker/.venv/bin/python:*)"
+      "Bash(imaging-worker/.venv/bin/python:*)",
+      "Bash(docker exec:*)",
+      "Bash(lsof:*)",
+      "Bash(brew services:*)",
+      "Bash(ps:*)"
     ],
     "deny": [],
     "ask": []

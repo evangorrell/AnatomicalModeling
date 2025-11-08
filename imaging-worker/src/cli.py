@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 import json
 
-from src.io.dicom_ingest import DICOMIngestor
 from src.prep.resample import VolumeResampler
 from src.seg.classical import ClassicalSegmenter
 from src.seg.metrics import SegmentationMetrics
@@ -21,33 +20,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-def cmd_ingest(args):
-    """Ingest DICOM ZIP file."""
-    logger.info(f"Ingesting DICOM ZIP: {args.input}")
-
-    zip_path = Path(args.input)
-    output_dir = Path(args.output)
-
-    if not zip_path.exists():
-        logger.error(f"Input file not found: {zip_path}")
-        return 1
-
-    try:
-        ingestor = DICOMIngestor(deidentify=not args.no_deidentify)
-        image, metadata, nifti_path = ingestor.process_zip(zip_path, output_dir)
-
-        logger.info(f"✓ Ingestion complete")
-        logger.info(f"  Volume: {nifti_path}")
-        logger.info(f"  Size: {image.GetSize()}")
-        logger.info(f"  Spacing: {image.GetSpacing()}")
-        logger.info(f"  Slices: {metadata['slice_count']}")
-
-        return 0
-    except Exception as e:
-        logger.error(f"Ingestion failed: {e}", exc_info=True)
-        return 1
 
 
 def cmd_resample(args):
@@ -89,65 +61,6 @@ def cmd_resample(args):
         return 0
     except Exception as e:
         logger.error(f"Resampling failed: {e}", exc_info=True)
-        return 1
-
-
-def cmd_pipeline(args):
-    """Run full Phase A1 pipeline: ingest + resample."""
-    logger.info("=" * 60)
-    logger.info("Running Phase A1 Pipeline: Ingest & Isotropic Resampling")
-    logger.info("=" * 60)
-
-    import SimpleITK as sitk
-
-    zip_path = Path(args.input)
-    output_dir = Path(args.output)
-
-    if not zip_path.exists():
-        logger.error(f"Input file not found: {zip_path}")
-        return 1
-
-    try:
-        # Stage 1: Ingest
-        logger.info("\n[1/2] DICOM Ingestion...")
-        ingestor = DICOMIngestor(deidentify=not args.no_deidentify)
-        image, metadata, nifti_path = ingestor.process_zip(zip_path, output_dir)
-
-        logger.info(f"✓ Ingested {metadata['slice_count']} slices")
-        logger.info(f"  Spacing: {image.GetSpacing()}")
-        logger.info(f"  Size: {image.GetSize()}")
-
-        # Stage 2: Resample
-        logger.info("\n[2/2] Isotropic Resampling...")
-
-        target_spacing = None
-        if args.spacing:
-            target_spacing = (args.spacing,) * 3
-
-        resampler = VolumeResampler(
-            target_spacing=target_spacing,
-            interpolation=args.interpolation,
-        )
-
-        resampled, resample_meta = resampler.resample_to_isotropic(image, output_dir)
-
-        logger.info(f"✓ Resampled to isotropic spacing")
-        logger.info(f"  New spacing: {resampled.GetSpacing()}")
-        logger.info(f"  New size: {resampled.GetSize()}")
-
-        # Summary
-        logger.info("\n" + "=" * 60)
-        logger.info("Pipeline Complete!")
-        logger.info("=" * 60)
-        logger.info(f"Output directory: {output_dir}")
-        logger.info(f"  - volume.nii.gz (original)")
-        logger.info(f"  - volume_isotropic.nii.gz (resampled)")
-        logger.info(f"  - metadata.json")
-        logger.info(f"  - resample_metadata.json")
-
-        return 0
-    except Exception as e:
-        logger.error(f"Pipeline failed: {e}", exc_info=True)
         return 1
 
 
@@ -421,19 +334,9 @@ def cmd_mesh(args):
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Imaging Worker CLI - DICOM to 3D Mesh Pipeline"
+        description="Imaging Worker CLI - NIfTI to 3D Mesh Pipeline"
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
-
-    # Ingest command
-    ingest_parser = subparsers.add_parser("ingest", help="Ingest DICOM ZIP file")
-    ingest_parser.add_argument("input", help="Path to DICOM ZIP file")
-    ingest_parser.add_argument("output", help="Output directory")
-    ingest_parser.add_argument(
-        "--no-deidentify",
-        action="store_true",
-        help="Skip de-identification",
-    )
 
     # Resample command
     resample_parser = subparsers.add_parser("resample", help="Resample volume to isotropic")
@@ -445,30 +348,6 @@ def main():
         help="Target isotropic spacing (mm). Default: use minimum of current spacing",
     )
     resample_parser.add_argument(
-        "--interpolation",
-        choices=["linear", "bspline", "nearest"],
-        default="linear",
-        help="Interpolation method",
-    )
-
-    # Pipeline command (Phase A1)
-    pipeline_parser = subparsers.add_parser(
-        "pipeline",
-        help="Run full Phase A1 pipeline (ingest + resample)",
-    )
-    pipeline_parser.add_argument("input", help="Path to DICOM ZIP file")
-    pipeline_parser.add_argument("output", help="Output directory")
-    pipeline_parser.add_argument(
-        "--no-deidentify",
-        action="store_true",
-        help="Skip de-identification",
-    )
-    pipeline_parser.add_argument(
-        "--spacing",
-        type=float,
-        help="Target isotropic spacing (mm)",
-    )
-    pipeline_parser.add_argument(
         "--interpolation",
         choices=["linear", "bspline", "nearest"],
         default="linear",
@@ -585,12 +464,8 @@ def main():
         return 0
 
     # Dispatch to command handler
-    if args.command == "ingest":
-        return cmd_ingest(args)
-    elif args.command == "resample":
+    if args.command == "resample":
         return cmd_resample(args)
-    elif args.command == "pipeline":
-        return cmd_pipeline(args)
     elif args.command == "segment":
         return cmd_segment(args)
     elif args.command == "mesh":

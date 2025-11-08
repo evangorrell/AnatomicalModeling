@@ -10,6 +10,7 @@ build/
 
 # Medical imaging data (large files)
 Task01_BrainTumour/
+Task01_BrainTumor*/
 results/
 *.nii.gz
 *.nii
@@ -51,6 +52,11 @@ node_modules/
 .coverage
 .pytest_cache/
 coverage/
+
+# Personal Files
+orchestration/TROUBLESHOOTING.md
+orchestration/test-spawn.js
+claude/settings.local.json
 
 # Documentation (optional - only if these are redundant)
 # imaging-worker/docs/

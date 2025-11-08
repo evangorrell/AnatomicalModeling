@@ -1,3 +1,5 @@
+// Debugging script to test if Node.js can spawn Python processes
+
 const { spawn } = require('child_process');
 
 // Test 1: Can we spawn Python at all?
