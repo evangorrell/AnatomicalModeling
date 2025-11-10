@@ -80,13 +80,30 @@ export function useMeshes(studyId: string | null): UseMeshesResult {
         });
       });
 
-    // Load tumor mesh
+    // Load tumor mesh (may not exist for all studies)
     setTumor(prev => ({ ...prev, loading: true, error: null }));
     const tumorUrl = getMeshUrl(studyId, 'tumor.stl');
 
     fetch(tumorUrl)
-      .then(response => response.blob())
+      .then(response => {
+        if (!response.ok) {
+          // If tumor doesn't exist (404), that's okay - just don't load it
+          if (response.status === 404) {
+            console.log('No tumor mesh found for this study');
+            setTumor({
+              geometry: null,
+              loading: false,
+              error: null,
+            });
+            return null;
+          }
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.blob();
+      })
       .then(blob => {
+        if (!blob) return; // No tumor file exists
+
         const objectUrl = URL.createObjectURL(blob);
 
         loader.load(
@@ -122,7 +139,7 @@ export function useMeshes(studyId: string | null): UseMeshesResult {
         setTumor({
           geometry: null,
           loading: false,
-          error: 'Failed to fetch tumor mesh',
+          error: null, // Don't show error if tumor doesn't exist
         });
       });
 

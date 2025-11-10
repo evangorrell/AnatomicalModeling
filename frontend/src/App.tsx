@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
-import { uploadNifti, downloadAllMeshes, getMeshUrl } from './api';
+import { useState, useEffect, useRef } from 'react';
+import { uploadNifti, downloadMesh } from './api';
 import MeshViewer from './components/MeshViewer';
 import CircularProgress from './components/CircularProgress';
 import { MeshState } from './types';
+import { io, Socket } from 'socket.io-client';
+import { useMeshes } from './hooks/useMeshes';
+import { detectBrainAndTumor } from './utils/meshAnalysis';
 
 export default function App() {
   const [currentStudyId, setCurrentStudyId] = useState<string | null>(null);
@@ -15,7 +18,16 @@ export default function App() {
   const [error, setError] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [stlFile, setStlFile] = useState<string | null>(null);
+  const [stlFiles, setStlFiles] = useState<{ brain: string | null; tumor: string | null }>({
+    brain: null,
+    tumor: null,
+  });
+  const [unknownMeshFile, setUnknownMeshFile] = useState<File | null>(null);
+  const [showRoleSelector, setShowRoleSelector] = useState(false);
+  const [isGenericMesh, setIsGenericMesh] = useState(false); // Track if user selected "Generic"
+
+  // Load mesh data to check if tumor exists (only for NIfTI mode)
+  const { tumor } = useMeshes(uploadType === 'nifti' ? currentStudyId : null);
 
   const [meshState, setMeshState] = useState<MeshState>({
     brain: {
@@ -30,7 +42,16 @@ export default function App() {
     },
   });
 
-  const [cameraDistance, setCameraDistance] = useState(200);
+  // Zoom handlers reference (set by MeshViewer)
+  const zoomHandlersRef = useRef<{
+    zoomIn: () => void;
+    zoomOut: () => void;
+    getCurrentZoom: () => number;
+  } | null>(null);
+  const [zoomPercentage, setZoomPercentage] = useState(50);
+
+  // WebSocket reference
+  const socketRef = useRef<Socket | null>(null);
 
   // Contact form state
   const [formData, setFormData] = useState({
@@ -39,46 +60,18 @@ export default function App() {
     message: '',
   });
 
-  // Smooth progress simulation
+  // Cleanup WebSocket on unmount
   useEffect(() => {
-    if (!processing) return;
-
-    let currentProgress = progress;
-    const interval = setInterval(() => {
-      // Increment progress smoothly
-      if (currentProgress < 15) {
-        // Upload phase: 0-15% (faster)
-        currentProgress += 0.5;
-      } else if (currentProgress < 60) {
-        // Segmentation phase: 15-60% (slower)
-        currentProgress += 0.2;
-      } else if (currentProgress < 95) {
-        // Mesh generation phase: 60-95% (medium)
-        currentProgress += 0.3;
-      } else if (currentProgress < 100) {
-        // Final phase: 95-100% (slow)
-        currentProgress += 0.1;
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
       }
+    };
+  }, []);
 
-      setProgress(currentProgress);
-
-      // Update messages based on progress
-      if (currentProgress < 15) {
-        setProgressMessage('Uploading file...');
-      } else if (currentProgress < 60) {
-        setProgressMessage('Running segmentation...');
-      } else if (currentProgress < 95) {
-        setProgressMessage('Generating 3D meshes...');
-      } else {
-        setProgressMessage('Finalizing...');
-      }
-    }, 100); // Update every 100ms for smooth animation
-
-    return () => clearInterval(interval);
-  }, [processing, progress]);
-
-  const handleFileSelect = async (file: File) => {
+  const handleFileSelect = async (files: FileList | File) => {
     if (uploadType === 'nifti') {
+      const file = files instanceof FileList ? files[0] : files;
       if (!file.name.endsWith('.nii.gz') && !file.name.endsWith('.nii')) {
         setError('Please select a valid NIfTI file (.nii or .nii.gz)');
         return;
@@ -89,15 +82,46 @@ export default function App() {
       setError('');
 
     } else {
-      // STL file - direct viewing
-      if (!file.name.endsWith('.stl')) {
-        setError('Please select a valid STL file (.stl)');
+      // STL files - direct viewing (up to 2 files)
+      const fileArray = files instanceof FileList ? Array.from(files) : [files];
+
+      // Validate all files are STL
+      const invalidFiles = fileArray.filter(f => !f.name.endsWith('.stl'));
+      if (invalidFiles.length > 0) {
+        setError('Please select only valid STL files (.stl)');
         return;
       }
 
-      const url = URL.createObjectURL(file);
-      setStlFile(url);
-      setViewerMode('viewer');
+      if (fileArray.length > 2) {
+        setError('Please select up to 2 STL files (healthy tissue and tumor)');
+        return;
+      }
+
+      // Use intelligent detection (filename first, then volume)
+      const { brain: healthyFile, tumor: tumorFile, unknown: unknownFile } = await detectBrainAndTumor(fileArray);
+
+      console.log('Detected files:', {
+        healthy: healthyFile?.name || 'none',
+        tumor: tumorFile?.name || 'none',
+        unknown: unknownFile?.name || 'none',
+      });
+
+      if (unknownFile) {
+        // Ambiguous mesh - show role selector
+        setUnknownMeshFile(unknownFile);
+        setShowRoleSelector(true);
+        setError('');
+      } else {
+        // Classification successful - automatic detection
+        setStlFiles({
+          brain: healthyFile ? URL.createObjectURL(healthyFile) : null,
+          tumor: tumorFile ? URL.createObjectURL(tumorFile) : null,
+        });
+
+        setIsGenericMesh(false); // Not generic if automatically classified
+        setError('');
+        setViewerMode('viewer');
+      }
     }
   };
 
@@ -107,33 +131,70 @@ export default function App() {
     setProcessing(true);
     setError('');
     setProgress(0);
-    setProgressMessage('Starting...');
+    setProgressMessage('Uploading file...');
 
     try {
-      // Start the actual upload
+      // Start the upload
       const response = await uploadNifti(uploadedNiftiFile);
+      const studyId = response.studyId;
 
-      // The progress will continue updating via the useEffect
-      // Wait for progress to reach 100
-      const checkComplete = setInterval(() => {
-        if (progress >= 99.5) {
-          clearInterval(checkComplete);
-          setProgress(100);
-          setProgressMessage('Complete!');
+      console.log(`Upload complete. Study ID: ${studyId}. Connecting to WebSocket for progress...`);
 
-          setTimeout(() => {
-            setCurrentStudyId(response.studyId);
-            setProcessing(false);
-            setProgress(0);
-            setProgressMessage('');
-            setViewerMode('viewer');
-          }, 800);
-        }
-      }, 100);
+      // Connect to WebSocket for real-time progress
+      const backendUrl = (import.meta as any).env?.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:3000';
+      const socket = io(`${backendUrl}/progress`, {
+        transports: ['websocket', 'polling'],
+      });
+
+      socketRef.current = socket;
+
+      socket.on('connect', () => {
+        console.log('WebSocket connected');
+        // Subscribe to this study's progress
+        socket.emit('subscribe', studyId);
+      });
+
+      socket.on('progress', (data: { percentage: number; message: string; stage: string }) => {
+        console.log('Progress update:', data);
+        setProgress(data.percentage);
+        setProgressMessage(data.message);
+      });
+
+      socket.on('complete', (data: any) => {
+        console.log('Processing complete:', data);
+        setProgress(100);
+        setProgressMessage('Complete!');
+
+        setTimeout(() => {
+          setCurrentStudyId(studyId);
+          setProcessing(false);
+          setProgress(0);
+          setProgressMessage('');
+          setViewerMode('viewer');
+          socket.disconnect();
+        }, 1000);
+      });
+
+      socket.on('error', (data: { message: string }) => {
+        console.error('Processing error:', data);
+        setError(data.message || 'Processing failed. Please try again.');
+        setProcessing(false);
+        setProgress(0);
+        setProgressMessage('');
+        socket.disconnect();
+      });
+
+      socket.on('connect_error', (err) => {
+        console.error('WebSocket connection error:', err);
+        setError('Connection error. Please refresh and try again.');
+        setProcessing(false);
+        setProgress(0);
+        setProgressMessage('');
+      });
 
     } catch (err: any) {
-      console.error('Processing failed:', err);
-      setError(err.response?.data?.message || err.message || 'Processing failed. Please try again.');
+      console.error('Upload failed:', err);
+      setError(err.response?.data?.message || err.message || 'Upload failed. Please try again.');
       setProcessing(false);
       setProgress(0);
       setProgressMessage('');
@@ -145,9 +206,9 @@ export default function App() {
     e.stopPropagation();
     setDragActive(false);
 
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      handleFileSelect(file);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleFileSelect(files);
     }
   };
 
@@ -165,7 +226,14 @@ export default function App() {
     if (!currentStudyId) return;
     setDownloading(true);
     try {
-      await downloadAllMeshes(currentStudyId);
+      // Download brain (always exists)
+      await downloadMesh(currentStudyId, 'brain.stl');
+
+      // Download tumor only if it exists
+      if (tumor.geometry) {
+        await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
+        await downloadMesh(currentStudyId, 'tumor.stl');
+      }
     } catch (error) {
       console.error('Download failed:', error);
       alert('Failed to download meshes. Please try again.');
@@ -188,6 +256,40 @@ export default function App() {
     }));
   };
 
+  const handleRoleSelection = (role: 'brain' | 'tumor' | 'generic') => {
+    if (!unknownMeshFile) return;
+
+    if (role === 'brain') {
+      setStlFiles({
+        brain: URL.createObjectURL(unknownMeshFile),
+        tumor: null,
+      });
+      setIsGenericMesh(false);
+    } else if (role === 'tumor') {
+      setStlFiles({
+        brain: null,
+        tumor: URL.createObjectURL(unknownMeshFile),
+      });
+      setIsGenericMesh(false);
+    } else if (role === 'generic') {
+      // Treat as brain for display purposes but with neutral colors
+      setStlFiles({
+        brain: URL.createObjectURL(unknownMeshFile),
+        tumor: null,
+      });
+      // Set generic color
+      setMeshState(prev => ({
+        ...prev,
+        brain: { ...prev.brain, color: '#8b8b8b', opacity: 0.9 },
+      }));
+      setIsGenericMesh(true); // Mark as generic
+    }
+
+    setShowRoleSelector(false);
+    setUnknownMeshFile(null);
+    setViewerMode('viewer');
+  };
+
   const handleContactChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -203,11 +305,17 @@ export default function App() {
   const resetViewer = () => {
     setViewerMode('upload');
     setCurrentStudyId(null);
-    setStlFile(null);
+
+    // Clean up STL object URLs
+    if (stlFiles.brain) URL.revokeObjectURL(stlFiles.brain);
+    if (stlFiles.tumor) URL.revokeObjectURL(stlFiles.tumor);
+    setStlFiles({ brain: null, tumor: null });
+
     setUploadedNiftiFile(null);
     setError('');
     setProgress(0);
     setProgressMessage('');
+    setIsGenericMesh(false); // Reset generic flag
   };
 
   return (
@@ -338,7 +446,7 @@ export default function App() {
                     transition: 'all 0.3s',
                   }}
                 >
-                  Upload STL File
+                  Upload STL File(s)
                 </button>
               </div>
 
@@ -484,7 +592,7 @@ export default function App() {
                   }}>
                     {uploadType === 'nifti'
                       ? 'Drop your .nii.gz file here'
-                      : 'Drop your .stl file here'
+                      : 'Drop your .stl file(s) here'
                     }
                   </p>
                   <p style={{
@@ -500,7 +608,8 @@ export default function App() {
                 id="file-input"
                 type="file"
                 accept={uploadType === 'nifti' ? '.gz,.nii' : '.stl'}
-                onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
+                multiple={uploadType === 'stl'}
+                onChange={(e) => e.target.files && e.target.files.length > 0 && handleFileSelect(e.target.files)}
                 style={{ display: 'none' }}
               />
             </div>
@@ -521,48 +630,123 @@ export default function App() {
               }}>
                 3D Model Viewer
               </h2>
-              <button
-                onClick={resetViewer}
-                style={{
-                  padding: '12px 24px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  borderRadius: '8px',
-                  color: 'white',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                }}
-              >
-                ← Back to Upload
-              </button>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                {uploadType === 'nifti' && currentStudyId && (
+                  <button
+                    onClick={handleDownload}
+                    disabled={downloading}
+                    style={{
+                      background: '#ff6b4a',
+                      color: 'white',
+                      border: 'none',
+                      padding: '12px 24px',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: downloading ? 'not-allowed' : 'pointer',
+                      opacity: downloading ? 0.6 : 1,
+                    }}
+                  >
+                    {downloading ? 'Downloading...' : 'Download STLs'}
+                  </button>
+                )}
+                <button
+                  onClick={resetViewer}
+                  style={{
+                    padding: '12px 24px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    borderRadius: '8px',
+                    color: 'white',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: 'pointer',
+                  }}
+                >
+                  ← Back to Upload
+                </button>
+              </div>
             </div>
 
-            {/* Controls */}
-            {uploadType === 'nifti' && currentStudyId && (
-              <div style={{
-                background: 'rgba(255, 255, 255, 0.1)',
-                backdropFilter: 'blur(10px)',
-                borderRadius: '12px',
-                padding: '20px',
-                marginBottom: '20px',
-                display: 'flex',
-                gap: '24px',
-                flexWrap: 'wrap',
-                alignItems: 'center',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: '180px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: '500', minWidth: '50px' }}>Zoom</span>
-                  <input
-                    type="range"
-                    min="80"
-                    max="400"
-                    value={cameraDistance}
-                    onChange={(e) => setCameraDistance(Number(e.target.value))}
-                    style={{ flex: 1, accentColor: '#ff6b4a' }}
-                  />
-                </div>
+            {/* Controls - Show for both NIfTI and STL modes */}
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              backdropFilter: 'blur(10px)',
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '20px',
+              display: 'flex',
+              gap: '24px',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '14px', fontWeight: '500' }}>Zoom</span>
+                <button
+                  onClick={() => {
+                    if (zoomHandlersRef.current) {
+                      zoomHandlersRef.current.zoomOut();
+                      const currentZoom = zoomHandlersRef.current.getCurrentZoom();
+                      // Map distance (50-500) to percentage (0-100)
+                      setZoomPercentage(Math.round(((500 - currentZoom) / 450) * 100));
+                    }
+                  }}
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    borderRadius: '6px',
+                    color: 'white',
+                    fontSize: '18px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  −
+                </button>
+                <span style={{
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  minWidth: '45px',
+                  textAlign: 'center',
+                  color: 'rgba(255, 255, 255, 0.8)'
+                }}>
+                  {zoomPercentage}%
+                </span>
+                <button
+                  onClick={() => {
+                    if (zoomHandlersRef.current) {
+                      zoomHandlersRef.current.zoomIn();
+                      const currentZoom = zoomHandlersRef.current.getCurrentZoom();
+                      // Map distance (50-500) to percentage (0-100)
+                      setZoomPercentage(Math.round(((500 - currentZoom) / 450) * 100));
+                    }
+                  }}
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    borderRadius: '6px',
+                    color: 'white',
+                    fontSize: '18px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  +
+                </button>
+              </div>
 
+              {/* Only show brain controls if brain exists (NIfTI or STL) */}
+              {(uploadType === 'nifti' ? true : stlFiles.brain) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                     <input
@@ -571,7 +755,11 @@ export default function App() {
                       onChange={(e) => updateBrainState({ visible: e.target.checked })}
                       style={{ accentColor: '#ff6b4a', width: '18px', height: '18px' }}
                     />
-                    <span style={{ fontSize: '14px', fontWeight: '500' }}>Brain</span>
+                    <span style={{ fontSize: '14px', fontWeight: '500' }}>
+                      {uploadType === 'stl' && stlFiles.brain && !stlFiles.tumor
+                        ? (isGenericMesh ? 'Mesh' : 'Brain')
+                        : 'Brain'}
+                    </span>
                   </label>
                   <input
                     type="range"
@@ -583,7 +771,10 @@ export default function App() {
                     style={{ width: '100px', accentColor: '#ff6b4a' }}
                   />
                 </div>
+              )}
 
+              {/* Only show tumor controls if tumor exists (NIfTI or STL) */}
+              {(uploadType === 'nifti' ? tumor.geometry : stlFiles.tumor) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                     <input
@@ -592,7 +783,9 @@ export default function App() {
                       onChange={(e) => updateTumorState({ visible: e.target.checked })}
                       style={{ accentColor: '#ff6b4a', width: '18px', height: '18px' }}
                     />
-                    <span style={{ fontSize: '14px', fontWeight: '500' }}>Tumor</span>
+                    <span style={{ fontSize: '14px', fontWeight: '500' }}>
+                      Tumor
+                    </span>
                   </label>
                   <input
                     type="range"
@@ -604,26 +797,8 @@ export default function App() {
                     style={{ width: '100px', accentColor: '#ff6b4a' }}
                   />
                 </div>
-
-                <button
-                  onClick={handleDownload}
-                  disabled={downloading}
-                  style={{
-                    background: '#ff6b4a',
-                    color: 'white',
-                    border: 'none',
-                    padding: '10px 20px',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: downloading ? 'not-allowed' : 'pointer',
-                    opacity: downloading ? 0.6 : 1,
-                  }}
-                >
-                  {downloading ? 'Downloading...' : 'Download STLs'}
-                </button>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* 3D Viewer */}
             <div style={{
@@ -634,9 +809,14 @@ export default function App() {
             }}>
               <MeshViewer
                 studyId={uploadType === 'nifti' ? currentStudyId : null}
-                stlFile={stlFile}
+                stlFiles={uploadType === 'stl' ? stlFiles : { brain: null, tumor: null }}
                 meshState={meshState}
-                cameraDistance={cameraDistance}
+                onZoomHandlersReady={(handlers) => {
+                  zoomHandlersRef.current = handlers;
+                  // Initialize zoom percentage based on initial camera distance
+                  const currentZoom = handlers.getCurrentZoom();
+                  setZoomPercentage(Math.round(((500 - currentZoom) / 450) * 100));
+                }}
               />
             </div>
           </div>
@@ -778,6 +958,153 @@ export default function App() {
           </form>
         </div>
       </section>
+
+      {/* Role Selector Modal */}
+      {showRoleSelector && unknownMeshFile && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #1a2f45 0%, #2d4a6e 100%)',
+            borderRadius: '16px',
+            padding: '48px',
+            maxWidth: '600px',
+            width: '90%',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+          }}>
+            <h2 style={{
+              fontSize: '28px',
+              fontWeight: '700',
+              marginBottom: '16px',
+              textAlign: 'center',
+            }}>
+              Mesh Classification
+            </h2>
+            <p style={{
+              fontSize: '16px',
+              opacity: 0.9,
+              textAlign: 'center',
+              marginBottom: '32px',
+            }}>
+              We couldn't automatically determine if "{unknownMeshFile.name}" is a brain, tumor, or other tissue type. Please select:
+            </p>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '16px',
+              marginBottom: '24px',
+            }}>
+              <button
+                onClick={() => handleRoleSelection('brain')}
+                style={{
+                  padding: '24px',
+                  background: 'rgba(176, 176, 176, 0.2)',
+                  border: '2px solid #b0b0b0',
+                  borderRadius: '12px',
+                  color: 'white',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(176, 176, 176, 0.3)';
+                  e.currentTarget.style.transform = 'scale(1.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(176, 176, 176, 0.2)';
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
+              >
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>🧠</div>
+                <div>Brain / Healthy</div>
+              </button>
+
+              <button
+                onClick={() => handleRoleSelection('tumor')}
+                style={{
+                  padding: '24px',
+                  background: 'rgba(255, 51, 51, 0.2)',
+                  border: '2px solid #ff3333',
+                  borderRadius: '12px',
+                  color: 'white',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 51, 51, 0.3)';
+                  e.currentTarget.style.transform = 'scale(1.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 51, 51, 0.2)';
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
+              >
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>🔴</div>
+                <div>Tumor / Lesion</div>
+              </button>
+
+              <button
+                onClick={() => handleRoleSelection('generic')}
+                style={{
+                  padding: '24px',
+                  background: 'rgba(139, 139, 139, 0.2)',
+                  border: '2px solid #8b8b8b',
+                  borderRadius: '12px',
+                  color: 'white',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(139, 139, 139, 0.3)';
+                  e.currentTarget.style.transform = 'scale(1.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(139, 139, 139, 0.2)';
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
+              >
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>⚪</div>
+                <div>Generic Mesh</div>
+              </button>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowRoleSelector(false);
+                setUnknownMeshFile(null);
+              }}
+              style={{
+                width: '100%',
+                padding: '12px',
+                background: 'transparent',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                borderRadius: '8px',
+                color: 'rgba(255, 255, 255, 0.7)',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

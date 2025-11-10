@@ -5,6 +5,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { StudiesModule } from './studies/studies.module';
 import { JobsModule } from './jobs/jobs.module';
 import { ModelsModule } from './models/models.module';
+import { EventsModule } from './events/events.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { ModelsModule } from './models/models.module';
     }),
 
     // Feature modules
+    EventsModule,
     StudiesModule,
     JobsModule,
     ModelsModule,

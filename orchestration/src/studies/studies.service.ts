@@ -2,54 +2,23 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { Study } from './study.entity';
+import { ProcessNiftiJobData } from './studies.processor';
 import * as AWS from 'aws-sdk';
 import { v4 as uuidv4 } from 'uuid';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as util from 'util';
-import { exec, spawn } from 'child_process';
 
 @Injectable()
 export class StudiesService {
   private s3: AWS.S3;
 
-  private runPythonCommand(pythonPath: string, args: string[], cwd: string): Promise<{ stdout: string; stderr: string }> {
-    return new Promise((resolve, reject) => {
-      const child = spawn(pythonPath, args, {
-        cwd,
-        env: process.env,
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      child.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      child.on('error', (error) => {
-        reject(error);
-      });
-
-      child.on('close', (code) => {
-        if (code !== 0) {
-          reject(new Error(`Python command failed with code ${code}: ${stderr}`));
-        } else {
-          resolve({ stdout, stderr });
-        }
-      });
-    });
-  }
-
   constructor(
     @InjectRepository(Study)
     private studyRepository: Repository<Study>,
     private configService: ConfigService,
+    @InjectQueue('studies')
+    private studiesQueue: Queue<ProcessNiftiJobData>,
   ) {
     this.s3 = new AWS.S3({
       endpoint: this.configService.get('S3_ENDPOINT'),
@@ -61,12 +30,11 @@ export class StudiesService {
     });
   }
 
-  async processUpload(file: Express.Multer.File): Promise<Study> {
+  /**
+   * Upload file and queue processing job
+   */
+  async processUpload(file: Express.Multer.File): Promise<{ study: Study; jobId: string }> {
     const studyId = uuidv4();
-    return this.processNiftiUpload(file, studyId);
-  }
-
-  private async processNiftiUpload(file: Express.Multer.File, studyId: string): Promise<Study> {
     const s3Key = `studies/${studyId}/original.nii.gz`;
 
     // Upload NIfTI to S3
@@ -79,132 +47,30 @@ export class StudiesService {
       })
       .promise();
 
-    // Process with imaging worker (Phase A2: segmentation)
-    const tempDir = `/tmp/${studyId}`;
-    fs.mkdirSync(tempDir, { recursive: true });
+    // Create study record with pending status
+    const study = this.studyRepository.create({
+      id: studyId,
+      modality: 'MR',
+      seriesDescription: 'NIfTI Upload',
+      metadata: {
+        source: 'nifti_upload',
+        filename: file.originalname,
+        status: 'pending',
+      },
+      s3Key,
+      volumeS3Key: s3Key,
+    });
 
-    try {
-      // Save NIfTI temporarily
-      const niftiPath = path.join(tempDir, 'input.nii.gz');
-      fs.writeFileSync(niftiPath, file.buffer);
+    await this.studyRepository.save(study);
 
-      // Run segmentation worker
-      const pythonPath = this.configService.get('WORKER_PYTHON_PATH', 'python3');
-      const outputDir = path.join(tempDir, 'output');
-      const args = ['-m', 'src.cli', 'segment', niftiPath, outputDir];
+    // Queue processing job
+    const job = await this.studiesQueue.add('process-nifti', {
+      studyId,
+      s3Key,
+      filename: file.originalname,
+    });
 
-      console.log(`Running segmentation: ${pythonPath} ${args.join(' ')}`);
-      const workerDir = path.resolve(process.cwd(), '../imaging-worker');
-      console.log(`Worker directory: ${workerDir}`);
-      const { stdout, stderr } = await this.runPythonCommand(
-        pythonPath,
-        args,
-        workerDir,
-      );
-
-      console.log('Segmentation output:', stdout);
-      if (stderr) console.error('Segmentation errors:', stderr);
-
-      // Read segmentation metadata
-      const segMetadataPath = path.join(outputDir, 'segmentation_metadata.json');
-      const segMetadata = JSON.parse(fs.readFileSync(segMetadataPath, 'utf-8'));
-
-      // Upload mask to S3
-      const maskPath = path.join(outputDir, 'mask.nii.gz');
-      const maskS3Key = `studies/${studyId}/mask.nii.gz`;
-
-      if (fs.existsSync(maskPath)) {
-        await this.s3
-          .upload({
-            Bucket: this.configService.get('S3_BUCKET'),
-            Key: maskS3Key,
-            Body: fs.readFileSync(maskPath),
-            ContentType: 'application/gzip',
-          })
-          .promise();
-
-        // Generate 3D meshes from segmentation (Phase A3 + A4)
-        // Phase A3: Custom Marching Cubes surface extraction
-        // Phase A4: Automated post-processing (hole filling, smoothing, manifold repair)
-        //          Post-processing is ENABLED BY DEFAULT for 3D print-ready output
-        console.log('Generating 3D meshes from segmentation...');
-        const meshDir = path.join(outputDir, 'meshes');
-        const meshArgs = ['-m', 'src.cli', 'mesh', maskPath, meshDir, '--formats', 'stl,obj', '--step-size', '1']; // KEEP STEP-SIZE AT 1 FOR WATERTIGHT
-        // Note: --no-postprocess flag omitted intentionally (post-processing is default)
-
-        try {
-          const { stdout: meshStdout, stderr: meshStderr } = await this.runPythonCommand(
-            pythonPath,
-            meshArgs,
-            workerDir,
-          );
-
-          console.log('Mesh generation output:', meshStdout);
-          if (meshStderr) console.error('Mesh generation errors:', meshStderr);
-
-          // Upload mesh files to S3
-          const meshFiles = ['brain.stl', 'brain.obj', 'brain.mtl', 'tumor.stl', 'tumor.obj', 'tumor.mtl', 'mesh_metadata.json'];
-
-          for (const meshFile of meshFiles) {
-            const meshFilePath = path.join(meshDir, meshFile);
-            if (fs.existsSync(meshFilePath)) {
-              const meshS3Key = `studies/${studyId}/meshes/${meshFile}`;
-              const contentType = meshFile.endsWith('.stl') ? 'application/vnd.ms-pki.stl' :
-                                  meshFile.endsWith('.obj') ? 'text/plain' :
-                                  meshFile.endsWith('.mtl') ? 'text/plain' : 'application/json';
-
-              await this.s3
-                .upload({
-                  Bucket: this.configService.get('S3_BUCKET'),
-                  Key: meshS3Key,
-                  Body: fs.readFileSync(meshFilePath),
-                  ContentType: contentType,
-                })
-                .promise();
-
-              console.log(`Uploaded mesh: ${meshS3Key}`);
-            }
-          }
-
-          // Read mesh metadata
-          const meshMetadataPath = path.join(meshDir, 'mesh_metadata.json');
-          let meshMetadata = null;
-          if (fs.existsSync(meshMetadataPath)) {
-            meshMetadata = JSON.parse(fs.readFileSync(meshMetadataPath, 'utf-8'));
-          }
-
-          segMetadata['meshes'] = meshMetadata;
-        } catch (meshError) {
-          console.error('Mesh generation failed (non-fatal):', meshError.message);
-          // Continue even if mesh generation fails
-        }
-      }
-
-      // Create study record
-      const study = this.studyRepository.create({
-        id: studyId,
-        modality: 'MR',
-        seriesDescription: 'NIfTI Upload',
-        metadata: {
-          source: 'nifti_upload',
-          segmentation: segMetadata,
-          filename: file.originalname,
-        },
-        s3Key,
-        volumeS3Key: s3Key, // Original NIfTI is the volume
-      });
-
-      await this.studyRepository.save(study);
-
-      // Cleanup temp files
-      fs.rmSync(tempDir, { recursive: true, force: true });
-
-      return study;
-    } catch (error) {
-      // Cleanup on error
-      fs.rmSync(tempDir, { recursive: true, force: true });
-      throw error;
-    }
+    return { study, jobId: job.id as string };
   }
 
 

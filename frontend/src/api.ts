@@ -1,11 +1,11 @@
 import axios from 'axios';
 import { UploadResponse, Study, MeshMetadata } from './types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 300000, // 5 minutes for mesh generation
+  timeout: 600000, // 10 minutes for mesh generation
 });
 
 export const uploadNifti = async (file: File): Promise<UploadResponse> => {

@@ -78,9 +78,15 @@ def cmd_segment(args):
         return 1
 
     try:
+        # Progress: 0% - Starting
+        print("PROGRESS: 0 - Loading volume...", flush=True)
+
         # Load volume
         image = sitk.ReadImage(str(input_path))
         logger.info(f"Loaded volume: size={image.GetSize()}, spacing={image.GetSpacing()}")
+
+        # Progress: 10%
+        print("PROGRESS: 10 - Volume loaded, starting segmentation...", flush=True)
 
         # Handle 4D volumes (multi-channel) - extract a single 3D volume
         if image.GetDimension() == 4:
@@ -101,6 +107,10 @@ def cmd_segment(args):
 
             image = extractor.Execute(image)
             logger.info(f"Extracted 3D volume: size={image.GetSize()}, spacing={image.GetSpacing()}")
+            print("PROGRESS: 15 - 3D volume extracted", flush=True)
+
+        # Progress: 20%
+        print("PROGRESS: 20 - Running segmentation algorithm...", flush=True)
 
         # Segment
         segmenter = ClassicalSegmenter(
@@ -111,11 +121,16 @@ def cmd_segment(args):
         )
 
         if args.method == "levelset":
+            print("PROGRESS: 30 - Running level-set segmentation...", flush=True)
             mask, metadata = segmenter.segment_with_levelset(
                 image, iterations=args.levelset_iterations, output_dir=output_dir
             )
         else:
+            print("PROGRESS: 30 - Running Otsu thresholding...", flush=True)
             mask, metadata = segmenter.segment(image, output_dir)
+
+        # Progress: 90%
+        print("PROGRESS: 90 - Segmentation complete, saving results...", flush=True)
 
         logger.info(f"✓ Segmentation complete")
         logger.info(f"  Method: {metadata['method']}")
@@ -150,6 +165,9 @@ def cmd_segment(args):
                 json.dump(metrics, f, indent=2)
             logger.info(f"  Saved metrics to {metrics_path}")
 
+        # Progress: 100%
+        print("PROGRESS: 100 - Segmentation pipeline complete", flush=True)
+
         return 0
     except Exception as e:
         logger.error(f"Segmentation failed: {e}", exc_info=True)
@@ -168,6 +186,9 @@ def cmd_mesh(args):
         return 1
 
     try:
+        # Progress: 0%
+        print("PROGRESS: 0 - Loading segmentation mask...", flush=True)
+
         # Load segmentation mask
         logger.info("Loading segmentation mask...")
         mask_img = sitk.ReadImage(str(input_path))
@@ -175,6 +196,9 @@ def cmd_mesh(args):
 
         logger.info(f"Mask size: {mask_img.GetSize()}")
         logger.info(f"Mask spacing: {spacing}")
+
+        # Progress: 10%
+        print("PROGRESS: 10 - Analyzing segmentation...", flush=True)
 
         # Create output directory
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -185,6 +209,9 @@ def cmd_mesh(args):
         labels = labels[labels > 0]  # Skip background (0)
 
         logger.info(f"Found {len(labels)} non-background labels: {labels}")
+
+        # Progress: 15%
+        print(f"PROGRESS: 15 - Found {len(labels)} structures to mesh", flush=True)
 
         # Label names for multi-class
         label_names = {
@@ -204,9 +231,13 @@ def cmd_mesh(args):
         meshes_metadata = {}
 
         # Generate mesh for each label
-        for label in labels:
+        for idx, label in enumerate(labels):
             label_name = label_names.get(label, f"label_{label}")
             label_color = label_colors.get(label, (0.5, 0.5, 0.5))
+
+            # Progress per label: 20% + (70% / num_labels) * idx
+            base_progress = 20 + int((70 / len(labels)) * idx)
+            print(f"PROGRESS: {base_progress} - Processing {label_name}...", flush=True)
 
             logger.info(f"\n{'='*60}")
             logger.info(f"Processing label {label}: {label_name}")
@@ -217,6 +248,7 @@ def cmd_mesh(args):
             logger.info(f"Label {label} voxels: {binary_mask.sum():,}")
 
             # Extract surface
+            print(f"PROGRESS: {base_progress + 5} - Running Marching Cubes for {label_name}...", flush=True)
             mesh = mc.extract_surface(
                 binary_mask,
                 level=0.5,
@@ -232,6 +264,7 @@ def cmd_mesh(args):
 
             # Phase A4: Post-process mesh (if enabled)
             if not args.no_postprocess:
+                print(f"PROGRESS: {base_progress + 10} - Post-processing {label_name} mesh...", flush=True)
                 logger.info(f"\nPhase A4: Post-processing mesh...")
                 vertices, faces, normals = postprocess_mesh(
                     mesh.vertices,
@@ -250,16 +283,20 @@ def cmd_mesh(args):
 
                 logger.info(f"Post-processed output: {mesh.n_vertices:,} vertices, {mesh.n_faces:,} faces")
 
-            # Store metadata
+            # Store metadata with explicit role (NIfTI pipeline knows roles with certainty)
+            mesh_role = "brain" if label_name == "brain" else "tumor" if label_name == "tumor" else "unknown"
             meshes_metadata[label_name] = {
                 "label_value": int(label),
                 "vertices": mesh.n_vertices,
                 "faces": mesh.n_faces,
                 "voxels": int(binary_mask.sum()),
                 "post_processed": not args.no_postprocess,
+                "role": mesh_role,
+                "confidence": 1.0,  # NIfTI pipeline has 100% confidence
             }
 
             # Export in requested formats
+            print(f"PROGRESS: {base_progress + 15} - Exporting {label_name} files...", flush=True)
             formats = args.formats.split(',')
 
             for fmt in formats:
@@ -304,6 +341,9 @@ def cmd_mesh(args):
                 else:
                     logger.warning(f"Unknown format: {fmt}")
 
+        # Progress: 90%
+        print("PROGRESS: 90 - Saving metadata...", flush=True)
+
         # Save metadata
         metadata_path = output_dir / "mesh_metadata.json"
         metadata = {
@@ -315,6 +355,9 @@ def cmd_mesh(args):
 
         with open(metadata_path, "w") as f:
             json.dump(metadata, f, indent=2)
+
+        # Progress: 100%
+        print("PROGRESS: 100 - Mesh generation complete!", flush=True)
 
         logger.info(f"\n{'='*60}")
         logger.info("MESH GENERATION COMPLETE!")

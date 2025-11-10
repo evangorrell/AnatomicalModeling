@@ -28,6 +28,8 @@ export interface Study {
             faces: number;
             voxels: number;
             post_processed: boolean;
+            role?: 'brain' | 'tumor' | 'unknown';
+            confidence?: number;
           };
         };
       };

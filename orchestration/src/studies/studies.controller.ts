@@ -50,12 +50,14 @@ export class StudiesController {
       throw new BadRequestException('File must be a NIfTI volume (.nii.gz or .nii)');
     }
 
-    const study = await this.studiesService.processUpload(file);
+    const { study, jobId } = await this.studiesService.processUpload(file);
 
     return {
       studyId: study.id,
-      message: 'NIfTI volume uploaded and segmented successfully',
+      jobId,
+      message: 'NIfTI volume uploaded successfully. Processing started.',
       fileType: 'nifti',
+      status: 'processing',
     };
   }
 
