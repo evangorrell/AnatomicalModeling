@@ -53,11 +53,13 @@ node_modules/
 .pytest_cache/
 coverage/
 
-# Personal Files
+# Code help files
 orchestration/TROUBLESHOOTING.md
 orchestration/test-spawn.js
-claude/settings.local.json
+.claude/
+CLAUDE.md
+SEGMENTATION_IMPROVEMENTS.md
 
-# Documentation (optional - only if these are redundant)
-# imaging-worker/docs/
-# orchestration/TROUBLESHOOTING.md
+# Old development docs
+imaging-worker/docs/
+imaging-worker/INSTALL.md
