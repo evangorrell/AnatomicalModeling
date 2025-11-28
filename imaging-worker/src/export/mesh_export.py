@@ -74,6 +74,9 @@ def export_obj(
     """
     logger.info(f"Exporting OBJ to {output_path}...")
 
+    # Ensure parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
     with open(output_path, 'w') as f:
         # Header
         f.write(f"# Wavefront OBJ file\n")
@@ -177,6 +180,9 @@ def _write_stl_binary(
     label: Optional[str],
 ) -> None:
     """Write binary STL file."""
+    # Ensure parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
     with open(output_path, 'wb') as f:
         # Header (80 bytes)
         header = (label or "mesh")[:80].ljust(80, '\0').encode('utf-8')
@@ -208,6 +214,9 @@ def _write_stl_ascii(
     label: Optional[str],
 ) -> None:
     """Write ASCII STL file."""
+    # Ensure parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
     with open(output_path, 'w') as f:
         solid_name = label or "mesh"
         f.write(f"solid {solid_name}\n")
@@ -235,6 +244,9 @@ def _write_ply_binary(
     colors: Optional[np.ndarray],
 ) -> None:
     """Write binary PLY file."""
+    # Ensure parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
     with open(output_path, 'wb') as f:
         # Write ASCII header
         header = _create_ply_header(vertices, faces, normals, colors, binary=True)
@@ -269,6 +281,9 @@ def _write_ply_ascii(
     colors: Optional[np.ndarray],
 ) -> None:
     """Write ASCII PLY file."""
+    # Ensure parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
     with open(output_path, 'w') as f:
         # Write header
         header = _create_ply_header(vertices, faces, normals, colors, binary=False)
@@ -339,6 +354,9 @@ def _write_mtl_file(
     color: tuple,
 ) -> None:
     """Write OBJ material file (.mtl)."""
+    # Ensure parent directory exists
+    mtl_path.parent.mkdir(parents=True, exist_ok=True)
+
     with open(mtl_path, 'w') as f:
         f.write(f"# Wavefront MTL file\n\n")
         f.write(f"newmtl {material_name}\n")
