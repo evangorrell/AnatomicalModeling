@@ -160,26 +160,29 @@ class ClassicalSegmenter:
             tumor_mask = morphology.binary_opening(tumor_mask, footprint=tumor_footprint)
 
             # Keep only reasonably-sized components (remove tiny noise)
+            # Keep only reasonably-sized tumor components (remove tiny noise)
             labeled_tumor, num_tumor_components = ndimage.label(tumor_mask)
+
             if num_tumor_components > 0:
                 component_sizes = np.bincount(labeled_tumor.ravel())
-                component_sizes[0] = 0  # Ignore background
+                component_sizes[0] = 0  # ignore background label
 
-                # Keep ONLY the largest tumor component (for solid tumor appearance)
-                min_tumor_size = 100
-                largest_tumor_label = component_sizes.argmax()
-                largest_tumor_size = component_sizes[largest_tumor_label]
+                min_tumor_size = 100  # voxels
+                keep_labels = np.where(component_sizes >= min_tumor_size)[0]
 
-                if largest_tumor_size > min_tumor_size:
-                    tumor_mask = (labeled_tumor == largest_tumor_label)
-                    logger.info(f"Found {num_tumor_components} tumor regions, keeping largest ({largest_tumor_size:,} voxels)")
-                    logger.info(f"Final tumor voxels: {tumor_mask.sum():,}")
+                if keep_labels.size > 0:
+                    tumor_mask = np.isin(labeled_tumor, keep_labels)
+                    logger.info(
+                        f"Kept {keep_labels.size} tumor components >= {min_tumor_size} voxels "
+                        f"(largest={component_sizes[keep_labels].max():,} voxels)"
+                    )
                 else:
-                    logger.warning(f"Largest tumor component ({largest_tumor_size} voxels) < {min_tumor_size} minimum")
                     tumor_mask = np.zeros_like(tumor_mask, dtype=bool)
+                    logger.warning(f"All tumor components were < {min_tumor_size} voxels; tumor mask cleared.")
             else:
-                logger.warning("No tumor components detected")
                 tumor_mask = np.zeros_like(tumor_mask, dtype=bool)
+                logger.warning("No tumor components detected after labeling!")
+
         else:
             logger.warning("No voxels above tumor threshold!")
 

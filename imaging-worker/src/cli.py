@@ -367,8 +367,6 @@ def cmd_mesh(args):
                 binary_mask,
                 level=0.5,
                 spacing=spacing,
-                origin=origin,
-                direction=direction,
                 compute_normals=True,
             )
 

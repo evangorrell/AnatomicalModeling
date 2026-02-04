@@ -210,19 +210,15 @@ class MarchingCubes:
                         # - x + edge_pos[0] gives the x-index
                         # Note: edge_pos[0]=dx, edge_pos[1]=dy, edge_pos[2]=dz
 
-                        # Compute voxel indices in SimpleITK (x, y, z) order
-                        voxel_x = x + edge_pos[0] * self.step_size
-                        voxel_y = y + edge_pos[1] * self.step_size
-                        voxel_z = z + edge_pos[2] * self.step_size
-                        voxel_xyz = np.array([voxel_x, voxel_y, voxel_z], dtype=np.float64)
+                        # Treat edge_pos as (dz, dy, dx) offsets inside the cube
+                        # because volume indexing is (z, y, x)
+                        dz, dy, dx = edge_pos
 
-                        # Transform voxel indices to physical coordinates:
-                        # physical = origin + direction @ (voxel * spacing)
-                        # where spacing is applied element-wise to voxel indices
-                        scaled_voxel = voxel_xyz * spacing_xyz
-                        physical_pos = origin_xyz + direction_matrix @ scaled_voxel
-
-                        edge_vertices[edge_idx] = physical_pos.astype(np.float32)
+                        edge_vertices[edge_idx] = np.array([
+                            (x + dx * self.step_size) * spacing[0],
+                            (y + dy * self.step_size) * spacing[1],
+                            (z + dz * self.step_size) * spacing[2],
+                        ], dtype=np.float32)
                         edge_has_vertex[edge_idx] = True
 
                     # Generate triangles
