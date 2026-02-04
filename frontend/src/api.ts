@@ -21,6 +21,20 @@ export const uploadNifti = async (file: File): Promise<UploadResponse> => {
   return response.data;
 };
 
+export const uploadNiftiWithLabels = async (imageFile: File, labelsFile: File): Promise<UploadResponse> => {
+  const formData = new FormData();
+  formData.append('image', imageFile);
+  formData.append('labels', labelsFile);
+
+  const response = await api.post<UploadResponse>('/studies/upload-with-labels', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+
+  return response.data;
+};
+
 export const getStudy = async (studyId: string): Promise<Study> => {
   const response = await api.get<Study>(`/studies/${studyId}`);
   return response.data;

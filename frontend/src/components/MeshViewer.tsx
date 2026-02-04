@@ -45,10 +45,13 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady }: MeshViewer
   const controlsRef = useRef<any>(null);
   const [stlBrainGeometry, setStlBrainGeometry] = useState<THREE.BufferGeometry | null>(null);
   const [stlTumorGeometry, setStlTumorGeometry] = useState<THREE.BufferGeometry | null>(null);
+  const [rawBrainGeometry, setRawBrainGeometry] = useState<THREE.BufferGeometry | null>(null);
+  const [rawTumorGeometry, setRawTumorGeometry] = useState<THREE.BufferGeometry | null>(null);
 
-  // Load STL brain file if provided
+  // Load STL brain file if provided (without centering yet)
   useEffect(() => {
     if (!stlFiles.brain) {
+      setRawBrainGeometry(null);
       setStlBrainGeometry(null);
       return;
     }
@@ -57,9 +60,9 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady }: MeshViewer
     loader.load(
       stlFiles.brain,
       (geometry) => {
-        geometry.center();
         geometry.computeVertexNormals();
-        setStlBrainGeometry(geometry);
+        // DON'T center yet - store raw geometry
+        setRawBrainGeometry(geometry);
       },
       undefined,
       (error) => {
@@ -68,15 +71,16 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady }: MeshViewer
     );
 
     return () => {
-      if (stlBrainGeometry) {
-        stlBrainGeometry.dispose();
+      if (rawBrainGeometry) {
+        rawBrainGeometry.dispose();
       }
     };
   }, [stlFiles.brain]);
 
-  // Load STL tumor file if provided
+  // Load STL tumor file if provided (without centering yet)
   useEffect(() => {
     if (!stlFiles.tumor) {
+      setRawTumorGeometry(null);
       setStlTumorGeometry(null);
       return;
     }
@@ -85,9 +89,9 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady }: MeshViewer
     loader.load(
       stlFiles.tumor,
       (geometry) => {
-        geometry.center();
         geometry.computeVertexNormals();
-        setStlTumorGeometry(geometry);
+        // DON'T center yet - store raw geometry
+        setRawTumorGeometry(geometry);
       },
       undefined,
       (error) => {
@@ -96,31 +100,70 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady }: MeshViewer
     );
 
     return () => {
-      if (stlTumorGeometry) {
-        stlTumorGeometry.dispose();
+      if (rawTumorGeometry) {
+        rawTumorGeometry.dispose();
       }
     };
   }, [stlFiles.tumor]);
 
-  // Verify brain/tumor assignment using volume analysis after both are loaded
+  // Center both meshes TOGETHER using the brain's bounding box as reference
+  useEffect(() => {
+    // Wait for at least the brain to be loaded
+    if (!rawBrainGeometry) {
+      return;
+    }
+
+    // Compute the brain's bounding box center (use brain as reference)
+    rawBrainGeometry.computeBoundingBox();
+    const brainBox = rawBrainGeometry.boundingBox;
+    if (!brainBox) return;
+
+    const center = new THREE.Vector3();
+    brainBox.getCenter(center);
+
+    console.log('Centering meshes together using brain center:', center);
+
+    // Clone and translate the brain geometry
+    const centeredBrain = rawBrainGeometry.clone();
+    centeredBrain.translate(-center.x, -center.y, -center.z);
+    setStlBrainGeometry(centeredBrain);
+
+    // If we have a tumor, translate it by the SAME offset (preserving relative position)
+    if (rawTumorGeometry) {
+      const centeredTumor = rawTumorGeometry.clone();
+      centeredTumor.translate(-center.x, -center.y, -center.z);
+      setStlTumorGeometry(centeredTumor);
+
+      // Log tumor's position relative to brain for verification
+      centeredTumor.computeBoundingBox();
+      const tumorBox = centeredTumor.boundingBox;
+      if (tumorBox) {
+        const tumorCenter = new THREE.Vector3();
+        tumorBox.getCenter(tumorCenter);
+        console.log('Tumor position relative to brain center:', tumorCenter);
+      }
+    }
+  }, [rawBrainGeometry, rawTumorGeometry]);
+
+  // Verify brain/tumor assignment using volume analysis after both raw geometries are loaded
   const hasVerifiedRef = useRef(false);
   useEffect(() => {
-    if (stlBrainGeometry && stlTumorGeometry && !hasVerifiedRef.current) {
+    if (rawBrainGeometry && rawTumorGeometry && !hasVerifiedRef.current) {
       hasVerifiedRef.current = true;
 
       const { shouldSwap, brainVolume, tumorVolume } = verifyAssignmentByVolume(
-        stlBrainGeometry,
-        stlTumorGeometry
+        rawBrainGeometry,
+        rawTumorGeometry
       );
 
       if (shouldSwap) {
         console.warn('⚠️ Volume analysis suggests brain/tumor assignment should be swapped!');
         console.warn(`Current "brain" volume: ${brainVolume.toFixed(2)}, "tumor" volume: ${tumorVolume?.toFixed(2)}`);
-        console.warn('Consider swapping the file assignments.');
 
-        // Automatically swap - create new state to trigger re-render
-        setStlBrainGeometry(stlTumorGeometry.clone());
-        setStlTumorGeometry(stlBrainGeometry.clone());
+        // Swap the raw geometries (the centering effect will re-run)
+        const tempBrain = rawBrainGeometry;
+        setRawBrainGeometry(rawTumorGeometry);
+        setRawTumorGeometry(tempBrain);
 
         console.log('✅ Automatically swapped brain and tumor based on volume analysis');
       } else {
@@ -128,7 +171,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady }: MeshViewer
         console.log(`Brain volume: ${brainVolume.toFixed(2)}, Tumor volume: ${tumorVolume?.toFixed(2)}`);
       }
     }
-  }, [stlBrainGeometry, stlTumorGeometry]);
+  }, [rawBrainGeometry, rawTumorGeometry]);
 
   // Expose zoom handlers to parent component
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getMeshUrl } from '../api';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import * as THREE from 'three';
@@ -27,10 +27,69 @@ export function useMeshes(studyId: string | null): UseMeshesResult {
     error: null,
   });
 
+  // Store raw (uncentered) geometries
+  const rawBrainRef = useRef<THREE.BufferGeometry | null>(null);
+  const rawTumorRef = useRef<THREE.BufferGeometry | null>(null);
+  const hasCenteredRef = useRef(false);
+
+  // Function to center both meshes together using brain as reference
+  const centerMeshesTogether = () => {
+    const rawBrain = rawBrainRef.current;
+    if (!rawBrain) return;
+
+    // Compute brain's bounding box center
+    rawBrain.computeBoundingBox();
+    const brainBox = rawBrain.boundingBox;
+    if (!brainBox) return;
+
+    const center = new THREE.Vector3();
+    brainBox.getCenter(center);
+
+    console.log('[useMeshes] Centering meshes together using brain center:', center);
+
+    // Clone and translate brain
+    const centeredBrain = rawBrain.clone();
+    centeredBrain.translate(-center.x, -center.y, -center.z);
+    setBrain({
+      geometry: centeredBrain,
+      loading: false,
+      error: null,
+    });
+
+    // If tumor exists, translate by the SAME offset
+    const rawTumor = rawTumorRef.current;
+    if (rawTumor) {
+      const centeredTumor = rawTumor.clone();
+      centeredTumor.translate(-center.x, -center.y, -center.z);
+
+      // Log tumor position for verification
+      centeredTumor.computeBoundingBox();
+      const tumorBox = centeredTumor.boundingBox;
+      if (tumorBox) {
+        const tumorCenter = new THREE.Vector3();
+        tumorBox.getCenter(tumorCenter);
+        console.log('[useMeshes] Tumor position relative to brain center:', tumorCenter);
+      }
+
+      setTumor({
+        geometry: centeredTumor,
+        loading: false,
+        error: null,
+      });
+    }
+
+    hasCenteredRef.current = true;
+  };
+
   useEffect(() => {
     if (!studyId) {
       return;
     }
+
+    // Reset state
+    hasCenteredRef.current = false;
+    rawBrainRef.current = null;
+    rawTumorRef.current = null;
 
     const loader = new STLLoader();
 
@@ -46,15 +105,19 @@ export function useMeshes(studyId: string | null): UseMeshesResult {
         loader.load(
           objectUrl,
           (geometry) => {
-            // Center and compute normals
-            geometry.center();
+            // Compute normals but DON'T center yet
             geometry.computeVertexNormals();
 
-            setBrain({
-              geometry,
-              loading: false,
-              error: null,
-            });
+            // Store raw geometry
+            rawBrainRef.current = geometry;
+
+            // Try to center if we have both, or just brain if tumor doesn't exist
+            // We'll wait a bit for tumor to load first
+            setTimeout(() => {
+              if (!hasCenteredRef.current && rawBrainRef.current) {
+                centerMeshesTogether();
+              }
+            }, 500);
 
             // Clean up object URL
             URL.revokeObjectURL(objectUrl);
@@ -109,15 +172,16 @@ export function useMeshes(studyId: string | null): UseMeshesResult {
         loader.load(
           objectUrl,
           (geometry) => {
-            // Center and compute normals
-            geometry.center();
+            // Compute normals but DON'T center yet
             geometry.computeVertexNormals();
 
-            setTumor({
-              geometry,
-              loading: false,
-              error: null,
-            });
+            // Store raw geometry
+            rawTumorRef.current = geometry;
+
+            // Center both together now that tumor is loaded
+            if (rawBrainRef.current && !hasCenteredRef.current) {
+              centerMeshesTogether();
+            }
 
             // Clean up object URL
             URL.revokeObjectURL(objectUrl);

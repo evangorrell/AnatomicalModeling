@@ -9,7 +9,7 @@ Reference: Lorensen, W. E., & Cline, H. E. (1987). "Marching cubes: A high resol
 """
 
 import logging
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
 import numpy as np
 from dataclasses import dataclass
 
@@ -90,21 +90,48 @@ class MarchingCubes:
         volume: np.ndarray,
         level: float = 0.5,
         spacing: Tuple[float, float, float] = (1.0, 1.0, 1.0),
+        origin: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+        direction: Optional[Tuple[float, ...]] = None,
         compute_normals: bool = True,
     ) -> Mesh:
         """
         Extract isosurface from volume using Marching Cubes.
 
+        IMPORTANT COORDINATE CONVENTIONS:
+        - volume: NumPy array from SimpleITK GetArrayFromImage(), shape is (z, y, x)
+        - spacing: SimpleITK spacing, order is (x, y, z) - will be reversed internally
+        - origin: SimpleITK origin, order is (x, y, z) - will be reversed internally
+        - direction: SimpleITK direction (9-element flat), row-major 3x3 matrix
+
+        Output vertices are in physical (LPS) coordinates matching SimpleITK convention.
+
         Args:
-            volume: 3D numpy array (binary or scalar field)
+            volume: 3D numpy array (binary or scalar field), shape (z, y, x)
             level: Isovalue threshold (default 0.5 for binary masks)
-            spacing: Voxel spacing in (z, y, x) order
+            spacing: Voxel spacing from SimpleITK in (x, y, z) order
+            origin: Physical origin from SimpleITK in (x, y, z) order
+            direction: Direction cosines from SimpleITK (9 floats, row-major 3x3)
             compute_normals: Whether to compute vertex normals
 
         Returns:
-            Mesh object with vertices, faces, and optionally normals
+            Mesh object with vertices, faces, and optionally normals in physical coords
         """
         logger.info(f"Extracting isosurface (level={level}, step={self.step_size})...")
+
+        # Store original SimpleITK parameters (x, y, z order)
+        spacing_xyz = np.array(spacing, dtype=np.float64)
+        origin_xyz = np.array(origin, dtype=np.float64)
+
+        # Direction matrix: SimpleITK stores as row-major 3x3
+        # Each row is a basis vector direction in physical space
+        if direction is not None:
+            direction_matrix = np.array(direction, dtype=np.float64).reshape(3, 3)
+        else:
+            direction_matrix = np.eye(3, dtype=np.float64)
+
+        logger.info(f"  Spacing (x,y,z): {spacing_xyz}")
+        logger.info(f"  Origin (x,y,z): {origin_xyz}")
+        logger.info(f"  Direction matrix:\n{direction_matrix}")
 
         volume = volume.astype(np.float32)
         shape = volume.shape
@@ -171,17 +198,31 @@ class MarchingCubes:
                         else:
                             t = (level - v1) / (v2 - v1)
 
-                        # Compute interpolated position
+                        # Compute interpolated position within the cube
                         p1 = self.CORNER_OFFSETS[c1]
                         p2 = self.CORNER_OFFSETS[c2]
                         edge_pos = p1 + t * (p2 - p1)
 
-                        # Scale by voxel spacing and add offset
-                        edge_vertices[edge_idx] = np.array([
-                            (z + edge_pos[0] * self.step_size) * spacing[0],
-                            (y + edge_pos[1] * self.step_size) * spacing[1],
-                            (x + edge_pos[2] * self.step_size) * spacing[2],
-                        ])
+                        # CORNER_OFFSETS are defined as [dx, dy, dz] offsets
+                        # Our loop iterates z, y, x so:
+                        # - z + edge_pos[2] gives the z-index
+                        # - y + edge_pos[1] gives the y-index
+                        # - x + edge_pos[0] gives the x-index
+                        # Note: edge_pos[0]=dx, edge_pos[1]=dy, edge_pos[2]=dz
+
+                        # Compute voxel indices in SimpleITK (x, y, z) order
+                        voxel_x = x + edge_pos[0] * self.step_size
+                        voxel_y = y + edge_pos[1] * self.step_size
+                        voxel_z = z + edge_pos[2] * self.step_size
+                        voxel_xyz = np.array([voxel_x, voxel_y, voxel_z], dtype=np.float64)
+
+                        # Transform voxel indices to physical coordinates:
+                        # physical = origin + direction @ (voxel * spacing)
+                        # where spacing is applied element-wise to voxel indices
+                        scaled_voxel = voxel_xyz * spacing_xyz
+                        physical_pos = origin_xyz + direction_matrix @ scaled_voxel
+
+                        edge_vertices[edge_idx] = physical_pos.astype(np.float32)
                         edge_has_vertex[edge_idx] = True
 
                     # Generate triangles

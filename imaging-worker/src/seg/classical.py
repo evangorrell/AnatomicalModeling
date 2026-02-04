@@ -24,6 +24,7 @@ class ClassicalSegmenter:
         largest_component_only: bool = True,
         gaussian_sigma: float = 1.0,  # Smooth before thresholding
         min_object_size: int = 1000,  # Remove tiny disconnected pieces
+        tumor_threshold_std: float = 1.0,  # Tumor threshold: mean + X*std (default 1.0 for better sensitivity)
     ):
         """Initialize classical segmenter.
 
@@ -34,6 +35,9 @@ class ClassicalSegmenter:
             largest_component_only: Keep only the largest connected component.
             gaussian_sigma: Gaussian smoothing sigma (0 = disabled). Reduces noise.
             min_object_size: Minimum object size in voxels (removes small artifacts).
+            tumor_threshold_std: Tumor threshold multiplier. Tumor = voxels > (mean + X*std).
+                                 Lower values = more sensitive (captures more of tumor).
+                                 Default: 1.0 (was 2.0, which was too aggressive).
         """
         self.closing_radius = closing_radius
         self.opening_radius = opening_radius
@@ -41,6 +45,7 @@ class ClassicalSegmenter:
         self.largest_component_only = largest_component_only
         self.gaussian_sigma = gaussian_sigma
         self.min_object_size = min_object_size
+        self.tumor_threshold_std = tumor_threshold_std
 
     def segment(
         self, image: sitk.Image, output_dir: Optional[Path] = None
@@ -134,12 +139,12 @@ class ClassicalSegmenter:
             logger.info(f"Brain mask (largest component): {brain_mask.sum():,} voxels")
 
         # ==========================================
-        # STEP 2: Segment TUMOR (mean + 2*std)
+        # STEP 2: Segment TUMOR (mean + X*std)
         # ==========================================
-        logger.info("\n--- STEP 2: Segmenting TUMOR (mean + 2*std) ---")
-        tumor_threshold = non_zero.mean() + 2.0 * non_zero.std()
+        logger.info(f"\n--- STEP 2: Segmenting TUMOR (mean + {self.tumor_threshold_std}*std) ---")
+        tumor_threshold = non_zero.mean() + self.tumor_threshold_std * non_zero.std()
         tumor_mask = array > tumor_threshold
-        logger.info(f"Tumor threshold (mean + 2*std): {tumor_threshold:.2f}")
+        logger.info(f"Tumor threshold (mean + {self.tumor_threshold_std}*std): {tumor_threshold:.2f}")
         logger.info(f"Initial tumor voxels: {tumor_mask.sum():,}")
 
         # Tumor must be within brain
@@ -160,16 +165,17 @@ class ClassicalSegmenter:
                 component_sizes = np.bincount(labeled_tumor.ravel())
                 component_sizes[0] = 0  # Ignore background
 
-                # Keep components larger than 100 voxels (~100 mm³)
+                # Keep ONLY the largest tumor component (for solid tumor appearance)
                 min_tumor_size = 100
-                large_components = np.where(component_sizes > min_tumor_size)[0]
+                largest_tumor_label = component_sizes.argmax()
+                largest_tumor_size = component_sizes[largest_tumor_label]
 
-                if len(large_components) > 0:
-                    tumor_mask = np.isin(labeled_tumor, large_components)
-                    logger.info(f"Kept {len(large_components)} tumor components > {min_tumor_size} voxels")
+                if largest_tumor_size > min_tumor_size:
+                    tumor_mask = (labeled_tumor == largest_tumor_label)
+                    logger.info(f"Found {num_tumor_components} tumor regions, keeping largest ({largest_tumor_size:,} voxels)")
                     logger.info(f"Final tumor voxels: {tumor_mask.sum():,}")
                 else:
-                    logger.warning(f"No tumor components > {min_tumor_size} voxels found")
+                    logger.warning(f"Largest tumor component ({largest_tumor_size} voxels) < {min_tumor_size} minimum")
                     tumor_mask = np.zeros_like(tumor_mask, dtype=bool)
             else:
                 logger.warning("No tumor components detected")

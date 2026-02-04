@@ -112,22 +112,108 @@ def cmd_segment(args):
         # Progress: 20%
         print("PROGRESS: 20 - Running segmentation algorithm...", flush=True)
 
-        # Segment
-        segmenter = ClassicalSegmenter(
-            closing_radius=args.closing_radius,
-            opening_radius=args.opening_radius,
-            fill_holes=not args.no_fill_holes,
-            largest_component_only=not args.keep_all_components,
-        )
+        # Check if using ground truth labels
+        if args.use_labels:
+            print("PROGRESS: 30 - Using provided label file for tumor...", flush=True)
+            logger.info(f"Using label file: {args.use_labels}")
 
-        if args.method == "levelset":
-            print("PROGRESS: 30 - Running level-set segmentation...", flush=True)
-            mask, metadata = segmenter.segment_with_levelset(
-                image, iterations=args.levelset_iterations, output_dir=output_dir
-            )
+            # Load label file
+            label_img = sitk.ReadImage(args.use_labels)
+            label_arr = sitk.GetArrayFromImage(label_img)
+
+            # Parse tumor labels
+            tumor_labels = [int(x.strip()) for x in args.tumor_labels.split(',')]
+            logger.info(f"Tumor labels: {tumor_labels}")
+
+            # Get tumor mask from ground truth
+            tumor_mask = np.isin(label_arr, tumor_labels)
+            logger.info(f"Tumor voxels from ground truth: {tumor_mask.sum():,}")
+
+            # Get brain mask from image using Otsu (not from label file)
+            print("PROGRESS: 40 - Segmenting brain from image...", flush=True)
+            from skimage import filters
+            image_arr = sitk.GetArrayFromImage(image)
+            non_zero = image_arr[image_arr > 0]
+            brain_threshold = filters.threshold_otsu(non_zero)
+            brain_mask = image_arr > brain_threshold
+
+            # Apply morphological closing to fill holes in brain
+            from skimage import morphology
+            footprint = morphology.ball(3)
+            brain_mask = morphology.binary_closing(brain_mask, footprint=footprint)
+
+            # Fill holes in brain
+            from scipy import ndimage
+            for i in range(brain_mask.shape[0]):
+                brain_mask[i, :, :] = ndimage.binary_fill_holes(brain_mask[i, :, :])
+
+            # Keep largest connected component
+            labeled, num_components = ndimage.label(brain_mask)
+            if num_components > 1:
+                component_sizes = np.bincount(labeled.ravel())
+                component_sizes[0] = 0
+                largest_label = component_sizes.argmax()
+                brain_mask = labeled == largest_label
+
+            logger.info(f"Brain voxels from image: {brain_mask.sum():,}")
+
+            # Create multi-class mask: brain (excluding tumor) = 1, tumor = 2
+            multi_class = np.zeros_like(label_arr, dtype=np.uint8)
+            multi_class[brain_mask & ~tumor_mask] = 1  # Brain tissue
+            multi_class[tumor_mask] = 2  # Tumor (from ground truth)
+
+            # Create SimpleITK image
+            mask = sitk.GetImageFromArray(multi_class)
+            mask.CopyInformation(label_img)
+
+            # Save mask
+            output_dir.mkdir(parents=True, exist_ok=True)
+            mask_path = output_dir / "mask.nii.gz"
+            sitk.WriteImage(mask, str(mask_path))
+
+            # Compute volumes
+            spacing = image.GetSpacing()
+            voxel_volume_mm3 = np.prod(spacing)
+            brain_voxels = int((multi_class == 1).sum())
+            tumor_voxels = int((multi_class == 2).sum())
+
+            metadata = {
+                "method": "ground_truth_labels",
+                "label_file": str(args.use_labels),
+                "tumor_labels": tumor_labels,
+                "labels": {"0": "background", "1": "brain", "2": "tumor"},
+                "brain_voxels": brain_voxels,
+                "tumor_voxels": tumor_voxels,
+                "brain_volume_ml": float(brain_voxels * voxel_volume_mm3 / 1000),
+                "tumor_volume_ml": float(tumor_voxels * voxel_volume_mm3 / 1000),
+            }
+
+            # Save metadata
+            metadata_path = output_dir / "segmentation_metadata.json"
+            with open(metadata_path, "w") as f:
+                json.dump(metadata, f, indent=2)
+
+            logger.info(f"Created mask with GT tumor + Otsu brain")
+            logger.info(f"  Brain voxels: {brain_voxels:,}")
+            logger.info(f"  Tumor voxels: {tumor_voxels:,}")
         else:
-            print("PROGRESS: 30 - Running Otsu thresholding...", flush=True)
-            mask, metadata = segmenter.segment(image, output_dir)
+            # Segment using classical methods
+            segmenter = ClassicalSegmenter(
+                closing_radius=args.closing_radius,
+                opening_radius=args.opening_radius,
+                fill_holes=not args.no_fill_holes,
+                largest_component_only=not args.keep_all_components,
+                tumor_threshold_std=args.tumor_threshold_std,
+            )
+
+            if args.method == "levelset":
+                print("PROGRESS: 30 - Running level-set segmentation...", flush=True)
+                mask, metadata = segmenter.segment_with_levelset(
+                    image, iterations=args.levelset_iterations, output_dir=output_dir
+                )
+            else:
+                print("PROGRESS: 30 - Running Otsu thresholding...", flush=True)
+                mask, metadata = segmenter.segment(image, output_dir)
 
         # Progress: 90%
         print("PROGRESS: 90 - Segmentation complete, saving results...", flush=True)
@@ -193,9 +279,37 @@ def cmd_mesh(args):
         logger.info("Loading segmentation mask...")
         mask_img = sitk.ReadImage(str(input_path))
         spacing = mask_img.GetSpacing()
+        origin = mask_img.GetOrigin()
+        direction = mask_img.GetDirection()
 
         logger.info(f"Mask size: {mask_img.GetSize()}")
         logger.info(f"Mask spacing: {spacing}")
+        logger.info(f"Mask origin: {origin}")
+        logger.info(f"Mask direction: {direction}")
+
+        # Debug mode: comprehensive diagnostics
+        debug_stats = {}
+        if args.debug:
+            from src.debug.diagnostics import (
+                compute_image_diagnostics,
+                compute_mesh_diagnostics,
+                verify_mask_mesh_consistency,
+                save_debug_overlays,
+                save_debug_stats,
+                print_diagnostics,
+            )
+            logger.info("\n" + "="*60)
+            logger.info("DEBUG MODE ENABLED - Computing comprehensive diagnostics")
+            logger.info("="*60)
+
+            debug_dir = output_dir / "debug"
+            debug_dir.mkdir(parents=True, exist_ok=True)
+
+            # Compute mask diagnostics
+            mask_diag = compute_image_diagnostics(mask_img, name="segmentation_mask")
+            debug_stats["mask"] = mask_diag
+            logger.info("\nMask diagnostics:")
+            print_diagnostics(mask_diag, indent=1)
 
         # Progress: 10%
         print("PROGRESS: 10 - Analyzing segmentation...", flush=True)
@@ -253,6 +367,8 @@ def cmd_mesh(args):
                 binary_mask,
                 level=0.5,
                 spacing=spacing,
+                origin=origin,
+                direction=direction,
                 compute_normals=True,
             )
 
@@ -294,6 +410,50 @@ def cmd_mesh(args):
                 "role": mesh_role,
                 "confidence": 1.0,  # NIfTI pipeline has 100% confidence
             }
+
+            # Debug mode: verify mesh coordinates
+            if args.debug:
+                logger.info(f"\n--- DEBUG: {label_name} mesh diagnostics ---")
+
+                # Compute mask stats for this label
+                label_mask_stats = compute_image_diagnostics(
+                    mask_img, name=f"mask_{label_name}", mask_label=int(label)
+                )
+                debug_stats[f"mask_{label_name}"] = label_mask_stats
+                logger.info(f"\nMask stats for {label_name}:")
+                print_diagnostics(label_mask_stats, indent=1)
+
+                # Compute mesh stats
+                mesh_stats = compute_mesh_diagnostics(
+                    mesh.vertices, mesh.faces, name=f"mesh_{label_name}"
+                )
+                debug_stats[f"mesh_{label_name}"] = mesh_stats
+                logger.info(f"\nMesh stats for {label_name}:")
+                print_diagnostics(mesh_stats, indent=1)
+
+                # Verify consistency
+                consistency = verify_mask_mesh_consistency(
+                    label_mask_stats, mesh_stats, tolerance_mm=10.0
+                )
+                debug_stats[f"consistency_{label_name}"] = consistency
+                logger.info(f"\nConsistency check for {label_name}:")
+                print_diagnostics(consistency, indent=1)
+
+                if not consistency["passed"]:
+                    logger.warning(f"⚠️  CONSISTENCY CHECK FAILED for {label_name}!")
+                    for error in consistency["errors"]:
+                        logger.warning(f"   {error}")
+                else:
+                    logger.info(f"✓ Consistency check PASSED for {label_name}")
+
+                # Generate overlay images (need original image for this)
+                # For now, use the mask as both image and mask
+                save_debug_overlays(
+                    mask_img, mask_img,
+                    debug_dir / "overlays",
+                    label=int(label),
+                    name=label_name,
+                )
 
             # Export in requested formats
             print(f"PROGRESS: {base_progress + 15} - Exporting {label_name} files...", flush=True)
@@ -351,10 +511,32 @@ def cmd_mesh(args):
             "step_size": args.step_size,
             "formats": formats,
             "meshes": meshes_metadata,
+            "coordinate_info": {
+                "convention": "LPS (Left-Posterior-Superior)",
+                "spacing_xyz_mm": list(spacing),
+                "origin_xyz_mm": list(origin),
+                "direction_matrix": list(direction),
+            },
         }
 
         with open(metadata_path, "w") as f:
             json.dump(metadata, f, indent=2)
+
+        # Debug mode: save comprehensive stats
+        if args.debug:
+            debug_stats["coordinate_convention"] = {
+                "physical_space": "LPS (Left-Posterior-Superior)",
+                "sitk_index_order": "(x, y, z)",
+                "numpy_array_order": "(z, y, x)",
+                "mesh_vertex_order": "(x, y, z) in physical LPS coordinates",
+            }
+            debug_stats["image_metadata"] = {
+                "size_xyz": list(mask_img.GetSize()),
+                "spacing_xyz_mm": list(spacing),
+                "origin_xyz_mm": list(origin),
+                "direction_matrix": list(direction),
+            }
+            save_debug_stats(debug_stats, output_dir / "debug" / "stats.json")
 
         # Progress: 100%
         print("PROGRESS: 100 - Mesh generation complete!", flush=True)
@@ -442,6 +624,26 @@ def main():
         "--ground-truth",
         help="Path to ground truth mask for metric computation",
     )
+    segment_parser.add_argument(
+        "--tumor-threshold-std",
+        type=float,
+        default=1.0,
+        help="Tumor threshold: voxels > (mean + X*std). Lower = more sensitive. Default: 1.0",
+    )
+    segment_parser.add_argument(
+        "--use-labels",
+        help="Path to ground truth label file (.nii.gz) to use instead of classical segmentation",
+    )
+    segment_parser.add_argument(
+        "--tumor-labels",
+        default="1,2,3,4",
+        help="Comma-separated label values to treat as tumor (for --use-labels). Default: 1,2,3,4",
+    )
+    segment_parser.add_argument(
+        "--brain-labels",
+        default="all",
+        help="Label values for brain: 'all' (non-zero) or comma-separated values. Default: all",
+    )
 
     # Mesh command (Phase A3 + A4)
     mesh_parser = subparsers.add_parser(
@@ -498,6 +700,11 @@ def main():
         type=float,
         default=0.5,
         help="Decimation reduction target (0.0-1.0). Default: 0.5 (50%% reduction)",
+    )
+    mesh_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mode: output coordinate diagnostics, overlays, and validation stats",
     )
 
     args = parser.parse_args()

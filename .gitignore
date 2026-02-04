@@ -59,7 +59,11 @@ orchestration/test-spawn.js
 .claude/
 CLAUDE.md
 SEGMENTATION_IMPROVEMENTS.md
+RUN_COMMANDS.md
 
 # Old development docs
 imaging-worker/docs/
 imaging-worker/INSTALL.md
+
+# Gitignore
+.gitignore

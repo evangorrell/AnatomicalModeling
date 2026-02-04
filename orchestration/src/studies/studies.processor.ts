@@ -15,10 +15,14 @@ export interface ProcessNiftiJobData {
   studyId: string;
   s3Key: string;
   filename: string;
+  labelsS3Key?: string;  // Optional ground truth labels file
+  useLabels?: boolean;   // Whether to use labels for tumor
 }
 
 @Processor('studies', {
   concurrency: 3, // Process up to 3 studies concurrently
+  lockDuration: 600000, // 10 minutes - mesh generation is slow
+  lockRenewTime: 30000, // Renew lock every 30 seconds
 })
 export class StudiesProcessor extends WorkerHost {
   private logger = new Logger(StudiesProcessor.name);
@@ -42,8 +46,8 @@ export class StudiesProcessor extends WorkerHost {
   }
 
   async process(job: Job<ProcessNiftiJobData>): Promise<any> {
-    const { studyId, s3Key, filename } = job.data;
-    this.logger.log(`Processing study ${studyId}`);
+    const { studyId, s3Key, filename, labelsS3Key, useLabels } = job.data;
+    this.logger.log(`Processing study ${studyId}${useLabels ? ' (with ground truth labels)' : ''}`);
 
     const tempDir = `/tmp/${studyId}`;
     fs.mkdirSync(tempDir, { recursive: true });
@@ -52,7 +56,18 @@ export class StudiesProcessor extends WorkerHost {
       // Stage 1: Download from S3 (0-15%)
       await this.emitProgress(studyId, 0, 'upload', 'Downloading file from storage...');
       const niftiBuffer = await this.downloadFromS3(s3Key);
-      await this.emitProgress(studyId, 15, 'upload', 'File ready for processing');
+
+      // Download labels file if provided
+      let labelsPath: string | null = null;
+      if (useLabels && labelsS3Key) {
+        await this.emitProgress(studyId, 8, 'upload', 'Downloading labels file...');
+        const labelsBuffer = await this.downloadFromS3(labelsS3Key);
+        labelsPath = path.join(tempDir, 'labels.nii.gz');
+        fs.writeFileSync(labelsPath, labelsBuffer);
+        this.logger.log(`Labels file saved to ${labelsPath}`);
+      }
+
+      await this.emitProgress(studyId, 15, 'upload', 'Files ready for processing');
 
       // Save NIfTI temporarily
       const niftiPath = path.join(tempDir, 'input.nii.gz');
@@ -61,7 +76,7 @@ export class StudiesProcessor extends WorkerHost {
       // Stage 2: Segmentation (15-60%)
       await this.emitProgress(studyId, 15, 'segmentation', 'Starting brain segmentation...');
       const outputDir = path.join(tempDir, 'output');
-      const segMetadata = await this.runSegmentation(studyId, niftiPath, outputDir);
+      const segMetadata = await this.runSegmentation(studyId, niftiPath, outputDir, labelsPath);
       await this.emitProgress(studyId, 60, 'segmentation', 'Segmentation complete');
 
       // Upload mask to S3
@@ -106,7 +121,15 @@ export class StudiesProcessor extends WorkerHost {
       await this.emitProgress(studyId, 100, 'finalizing', 'Processing complete!');
 
       // Cleanup temp files
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      const resultsDir = path.join(process.cwd(), 'results', studyId);
+      fs.mkdirSync(resultsDir, { recursive: true });
+
+      // copy everything produced in tempDir/output -> results/<studyId>
+      const tempOutputDir = path.join(tempDir, 'output');
+      if (fs.existsSync(tempOutputDir)) {
+        fs.cpSync(tempOutputDir, resultsDir, { recursive: true, force: true });
+      }
+      // fs.rmSync(tempDir, { recursive: true, force: true });
 
       // Emit completion event
       this.progressGateway.emitComplete(studyId, {
@@ -154,10 +177,17 @@ export class StudiesProcessor extends WorkerHost {
       .promise();
   }
 
-  private async runSegmentation(studyId: string, niftiPath: string, outputDir: string): Promise<any> {
+  private async runSegmentation(studyId: string, niftiPath: string, outputDir: string, labelsPath?: string | null): Promise<any> {
     const pythonPath = this.configService.get('WORKER_PYTHON_PATH', 'python3');
     const workerDir = path.resolve(process.cwd(), '../imaging-worker');
     const args = ['-m', 'src.cli', 'segment', niftiPath, outputDir];
+
+    // If labels file provided, use it for tumor segmentation
+    if (labelsPath) {
+      args.push('--use-labels', labelsPath);
+      args.push('--tumor-labels', '1,2,3');  // BraTS tumor labels
+      this.logger.log(`Using ground truth labels from ${labelsPath}`);
+    }
 
     this.logger.log(`Running segmentation: ${pythonPath} ${args.join(' ')}`);
 

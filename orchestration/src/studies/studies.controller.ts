@@ -5,11 +5,12 @@ import {
   Param,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   BadRequestException,
   Res,
   Query,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { StudiesService } from './studies.service';
 import type { Response } from 'express';
@@ -57,6 +58,63 @@ export class StudiesController {
       jobId,
       message: 'NIfTI volume uploaded successfully. Processing started.',
       fileType: 'nifti',
+      status: 'processing',
+    };
+  }
+
+  @Post('upload-with-labels')
+  @ApiOperation({
+    summary: 'Upload NIfTI image with ground truth labels',
+    description: 'Upload both the MRI image (.nii.gz) and ground truth label file for accurate tumor visualization. The label file contains the tumor segmentation.'
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: 'MRI image file (.nii.gz)',
+        },
+        labels: {
+          type: 'string',
+          format: 'binary',
+          description: 'Ground truth label file (.nii.gz) - tumor segmentation',
+        },
+      },
+      required: ['image', 'labels'],
+    },
+  })
+  @UseInterceptors(FileFieldsInterceptor([
+    { name: 'image', maxCount: 1 },
+    { name: 'labels', maxCount: 1 },
+  ]))
+  async uploadWithLabels(
+    @UploadedFiles() files: { image?: Express.Multer.File[], labels?: Express.Multer.File[] }
+  ) {
+    if (!files.image?.[0] || !files.labels?.[0]) {
+      throw new BadRequestException('Both image and labels files are required');
+    }
+
+    const imageFile = files.image[0];
+    const labelsFile = files.labels[0];
+
+    // Validate file types
+    const isImageNifti = imageFile.originalname.endsWith('.nii.gz') || imageFile.originalname.endsWith('.nii');
+    const isLabelsNifti = labelsFile.originalname.endsWith('.nii.gz') || labelsFile.originalname.endsWith('.nii');
+
+    if (!isImageNifti || !isLabelsNifti) {
+      throw new BadRequestException('Both files must be NIfTI volumes (.nii.gz or .nii)');
+    }
+
+    const { study, jobId } = await this.studiesService.processUploadWithLabels(imageFile, labelsFile);
+
+    return {
+      studyId: study.id,
+      jobId,
+      message: 'Image and labels uploaded. Brain will be segmented from image, tumor from labels.',
+      fileType: 'nifti_with_labels',
       status: 'processing',
     };
   }

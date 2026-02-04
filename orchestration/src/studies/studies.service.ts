@@ -63,16 +63,88 @@ export class StudiesService {
 
     await this.studyRepository.save(study);
 
-    // Queue processing job
+    // Queue processing job with extended timeout for mesh generation
     const job = await this.studiesQueue.add('process-nifti', {
       studyId,
       s3Key,
       filename: file.originalname,
+    }, {
+      attempts: 2, // Retry once on failure
+      backoff: {
+        type: 'exponential',
+        delay: 5000,
+      },
+      removeOnComplete: 100, // Keep last 100 completed jobs
+      removeOnFail: 50, // Keep last 50 failed jobs
     });
 
     return { study, jobId: job.id as string };
   }
 
+  /**
+   * Upload image + labels files and queue processing job
+   * Labels file contains ground truth tumor segmentation
+   */
+  async processUploadWithLabels(
+    imageFile: Express.Multer.File,
+    labelsFile: Express.Multer.File
+  ): Promise<{ study: Study; jobId: string }> {
+    const studyId = uuidv4();
+    const imageS3Key = `studies/${studyId}/original.nii.gz`;
+    const labelsS3Key = `studies/${studyId}/labels.nii.gz`;
+
+    // Upload both files to S3
+    await Promise.all([
+      this.s3.upload({
+        Bucket: this.configService.get('S3_BUCKET'),
+        Key: imageS3Key,
+        Body: imageFile.buffer,
+        ContentType: 'application/gzip',
+      }).promise(),
+      this.s3.upload({
+        Bucket: this.configService.get('S3_BUCKET'),
+        Key: labelsS3Key,
+        Body: labelsFile.buffer,
+        ContentType: 'application/gzip',
+      }).promise(),
+    ]);
+
+    // Create study record
+    const study = this.studyRepository.create({
+      id: studyId,
+      modality: 'MR',
+      seriesDescription: 'NIfTI Upload with Labels',
+      metadata: {
+        source: 'nifti_with_labels',
+        imageFilename: imageFile.originalname,
+        labelsFilename: labelsFile.originalname,
+        status: 'pending',
+      },
+      s3Key: imageS3Key,
+      volumeS3Key: imageS3Key,
+    });
+
+    await this.studyRepository.save(study);
+
+    // Queue processing job with labels flag
+    const job = await this.studiesQueue.add('process-nifti', {
+      studyId,
+      s3Key: imageS3Key,
+      labelsS3Key: labelsS3Key,
+      filename: imageFile.originalname,
+      useLabels: true,
+    }, {
+      attempts: 2,
+      backoff: {
+        type: 'exponential',
+        delay: 5000,
+      },
+      removeOnComplete: 100,
+      removeOnFail: 50,
+    });
+
+    return { study, jobId: job.id as string };
+  }
 
   async findById(id: string): Promise<Study> {
     const study = await this.studyRepository.findOne({
