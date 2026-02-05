@@ -120,16 +120,33 @@ export class StudiesProcessor extends WorkerHost {
 
       await this.emitProgress(studyId, 100, 'finalizing', 'Processing complete!');
 
-      // Cleanup temp files
-      const resultsDir = path.join(process.cwd(), 'results', studyId);
+      // Save results to results/{input_name}/ folder
+      // Extract base name from filename (remove .nii.gz or .nii extension)
+      let baseName = filename.replace(/\.nii\.gz$/, '').replace(/\.nii$/, '');
+
+      // Find unique folder name (add _2, _3, etc. if exists)
+      // Save to parent directory's results folder (AnatomicalModeling/results/)
+      const resultsBaseDir = path.resolve(process.cwd(), '..', 'results');
+      fs.mkdirSync(resultsBaseDir, { recursive: true });
+
+      let resultsDir = path.join(resultsBaseDir, baseName);
+      let suffix = 1;
+      while (fs.existsSync(resultsDir)) {
+        suffix++;
+        resultsDir = path.join(resultsBaseDir, `${baseName}_${suffix}`);
+      }
       fs.mkdirSync(resultsDir, { recursive: true });
 
-      // copy everything produced in tempDir/output -> results/<studyId>
+      this.logger.log(`Saving results to: ${resultsDir}`);
+
+      // Copy everything produced in tempDir/output -> results/{input_name}
       const tempOutputDir = path.join(tempDir, 'output');
       if (fs.existsSync(tempOutputDir)) {
         fs.cpSync(tempOutputDir, resultsDir, { recursive: true, force: true });
       }
-      // fs.rmSync(tempDir, { recursive: true, force: true });
+
+      // Cleanup temp files
+      fs.rmSync(tempDir, { recursive: true, force: true });
 
       // Emit completion event
       this.progressGateway.emitComplete(studyId, {

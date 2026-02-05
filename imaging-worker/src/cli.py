@@ -367,6 +367,8 @@ def cmd_mesh(args):
                 binary_mask,
                 level=0.5,
                 spacing=spacing,
+                origin=origin,
+                direction=direction,
                 compute_normals=True,
             )
 
@@ -375,6 +377,15 @@ def cmd_mesh(args):
                 continue
 
             logger.info(f"Raw Marching Cubes output: {mesh.n_vertices:,} vertices, {mesh.n_faces:,} faces")
+
+            # Flip X-axis to correct for radiological vs neurological convention
+            # This ensures the tumor appears on the correct side in the 3D viewer
+            mesh.vertices[:, 0] = -mesh.vertices[:, 0]
+            if mesh.normals is not None:
+                mesh.normals[:, 0] = -mesh.normals[:, 0]
+            # Also flip face winding order to maintain correct normals after X-flip
+            mesh.faces = mesh.faces[:, ::-1]
+            logger.info("Applied X-flip for correct laterality in viewer")
 
             # Phase A4: Post-process mesh (if enabled)
             if not args.no_postprocess:
