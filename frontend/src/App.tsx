@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { uploadNifti, downloadMesh } from './api';
+import { uploadNiftiWithLabels, downloadMesh } from './api';
 import MeshViewer from './components/MeshViewer';
 import CircularProgress from './components/CircularProgress';
 import { MeshState } from './types';
@@ -11,7 +11,10 @@ export default function App() {
   const [currentStudyId, setCurrentStudyId] = useState<string | null>(null);
   const [viewerMode, setViewerMode] = useState<'upload' | 'viewer'>('upload');
   const [uploadType, setUploadType] = useState<'nifti' | 'stl'>('nifti');
-  const [uploadedNiftiFile, setUploadedNiftiFile] = useState<File | null>(null);
+  const [uploadedNiftiFiles, setUploadedNiftiFiles] = useState<{ image: File | null; labels: File | null }>({
+    image: null,
+    labels: null,
+  });
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
@@ -33,7 +36,7 @@ export default function App() {
     brain: {
       visible: true,
       color: '#b0b0b0',
-      opacity: 0.8,
+      opacity: 0.5,
     },
     tumor: {
       visible: true,
@@ -69,16 +72,89 @@ export default function App() {
     };
   }, []);
 
+  // Adjust opacity based on what meshes are present
+  useEffect(() => {
+    const hasBrain = uploadType === 'nifti' ? true : !!stlFiles.brain;
+    const hasTumor = uploadType === 'nifti' ? !!tumor.geometry : !!stlFiles.tumor;
+
+    if (hasBrain && hasTumor) {
+      // Both present: 50% brain, 100% tumor
+      setMeshState(prev => ({
+        ...prev,
+        brain: { ...prev.brain, opacity: 0.5 },
+        tumor: { ...prev.tumor, opacity: 1.0 },
+      }));
+    } else if (hasBrain && !hasTumor) {
+      // Only brain: 100% opacity
+      setMeshState(prev => ({
+        ...prev,
+        brain: { ...prev.brain, opacity: 1.0 },
+      }));
+    } else if (!hasBrain && hasTumor) {
+      // Only tumor: 100% opacity (red)
+      setMeshState(prev => ({
+        ...prev,
+        tumor: { ...prev.tumor, opacity: 1.0 },
+      }));
+    }
+  }, [uploadType, stlFiles.brain, stlFiles.tumor, tumor.geometry]);
+
   const handleFileSelect = async (files: FileList | File) => {
     if (uploadType === 'nifti') {
-      const file = files instanceof FileList ? files[0] : files;
-      if (!file.name.endsWith('.nii.gz') && !file.name.endsWith('.nii')) {
-        setError('Please select a valid NIfTI file (.nii or .nii.gz)');
+      const fileArray = files instanceof FileList ? Array.from(files) : [files];
+
+      // Validate all files are NIfTI
+      const invalidFiles = fileArray.filter(f => !f.name.endsWith('.nii.gz') && !f.name.endsWith('.nii'));
+      if (invalidFiles.length > 0) {
+        setError('Please select valid NIfTI files (.nii or .nii.gz)');
         return;
       }
 
-      // Just store the file, don't process yet
-      setUploadedNiftiFile(file);
+      // Check total count including already selected files
+      const existingCount = (uploadedNiftiFiles.image ? 1 : 0) + (uploadedNiftiFiles.labels ? 1 : 0);
+      if (existingCount + fileArray.length > 2) {
+        setError('Maximum 2 files allowed. Remove a file first.');
+        return;
+      }
+
+      // Labels files typically have "seg", "label", "mask", or "truth" in name
+      const labelPatterns = /seg|label|mask|truth|gt/i;
+
+      // Process new files and add to existing selection
+      let newImage = uploadedNiftiFiles.image;
+      let newLabels = uploadedNiftiFiles.labels;
+
+      for (const file of fileArray) {
+        const isLabelsFile = labelPatterns.test(file.name);
+
+        if (isLabelsFile) {
+          if (newLabels) {
+            // Already have labels, put this as image instead
+            if (!newImage) {
+              newImage = file;
+            } else {
+              setError('Both slots are filled. Remove a file first.');
+              return;
+            }
+          } else {
+            newLabels = file;
+          }
+        } else {
+          if (newImage) {
+            // Already have image, put this as labels instead
+            if (!newLabels) {
+              newLabels = file;
+            } else {
+              setError('Both slots are filled. Remove a file first.');
+              return;
+            }
+          } else {
+            newImage = file;
+          }
+        }
+      }
+
+      setUploadedNiftiFiles({ image: newImage, labels: newLabels });
       setError('');
 
     } else {
@@ -126,16 +202,16 @@ export default function App() {
   };
 
   const handleGenerateMesh = async () => {
-    if (!uploadedNiftiFile) return;
+    if (!uploadedNiftiFiles.image || !uploadedNiftiFiles.labels) return;
 
     setProcessing(true);
     setError('');
     setProgress(0);
-    setProgressMessage('Uploading file...');
+    setProgressMessage('Uploading files...');
 
     try {
-      // Start the upload
-      const response = await uploadNifti(uploadedNiftiFile);
+      // Start the upload with both files
+      const response = await uploadNiftiWithLabels(uploadedNiftiFiles.image, uploadedNiftiFiles.labels);
       const studyId = response.studyId;
 
       console.log(`Upload complete. Study ID: ${studyId}. Connecting to WebSocket for progress...`);
@@ -311,7 +387,7 @@ export default function App() {
     if (stlFiles.tumor) URL.revokeObjectURL(stlFiles.tumor);
     setStlFiles({ brain: null, tumor: null });
 
-    setUploadedNiftiFile(null);
+    setUploadedNiftiFiles({ image: null, labels: null });
     setError('');
     setProgress(0);
     setProgressMessage('');
@@ -400,80 +476,14 @@ export default function App() {
               width: '100%',
               maxWidth: '800px',
             }}>
-              {/* Upload Type Selector */}
-              <div style={{
-                display: 'flex',
-                gap: '16px',
-                marginBottom: '32px',
-              }}>
-                <button
-                  onClick={() => {
-                    setUploadType('nifti');
-                    setUploadedNiftiFile(null);
-                    setError('');
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: '16px',
-                    background: uploadType === 'nifti' ? '#ff6b4a' : 'rgba(255, 255, 255, 0.1)',
-                    border: uploadType === 'nifti' ? 'none' : '2px solid rgba(255, 255, 255, 0.2)',
-                    borderRadius: '12px',
-                    color: 'white',
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    transition: 'all 0.3s',
-                  }}
-                >
-                  Upload NIfTI File
-                </button>
-                <button
-                  onClick={() => {
-                    setUploadType('stl');
-                    setUploadedNiftiFile(null);
-                    setError('');
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: '16px',
-                    background: uploadType === 'stl' ? '#ff6b4a' : 'rgba(255, 255, 255, 0.1)',
-                    border: uploadType === 'stl' ? 'none' : '2px solid rgba(255, 255, 255, 0.2)',
-                    borderRadius: '12px',
-                    color: 'white',
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    transition: 'all 0.3s',
-                  }}
-                >
-                  Upload STL File(s)
-                </button>
-              </div>
-
-              {error && (
-                <div style={{
-                  background: 'rgba(255, 107, 74, 0.2)',
-                  border: '1px solid #ff6b4a',
-                  color: '#ff6b4a',
-                  padding: '16px 24px',
-                  borderRadius: '8px',
-                  marginBottom: '24px',
-                  fontSize: '15px',
-                }}>
-                  {error}
-                </div>
-              )}
-
-              {/* Drop Zone or Processing State */}
               {processing ? (
-                // Circular Progress Bar
+                // Processing State - Full box with just the progress loader
                 <div style={{
-                  minHeight: '280px',
+                  minHeight: '350px',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  padding: '40px',
                   gap: '32px',
                 }}>
                   <CircularProgress progress={progress} size={140} strokeWidth={10} />
@@ -495,72 +505,265 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-              ) : uploadedNiftiFile && uploadType === 'nifti' ? (
-                // Show "Generate Mesh" button after NIfTI upload
-                <div style={{
-                  minHeight: '280px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '40px',
-                }}>
-                  <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2" style={{ marginBottom: '24px' }}>
-                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                  </svg>
-
-                  <p style={{
-                    fontSize: '20px',
-                    fontWeight: '500',
-                    marginBottom: '8px',
-                  }}>
-                    File uploaded successfully!
-                  </p>
-                  <p style={{
-                    fontSize: '15px',
-                    opacity: 0.6,
+              ) : (
+                <>
+                  {/* Upload Type Selector */}
+                  <div style={{
+                    display: 'flex',
+                    gap: '16px',
                     marginBottom: '32px',
                   }}>
-                    {uploadedNiftiFile.name}
-                  </p>
+                    <button
+                      onClick={() => {
+                        setUploadType('nifti');
+                        setUploadedNiftiFiles({ image: null, labels: null });
+                        setError('');
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '16px',
+                        background: uploadType === 'nifti' ? '#ff6b4a' : 'rgba(255, 255, 255, 0.1)',
+                        border: uploadType === 'nifti' ? 'none' : '2px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '12px',
+                        color: 'white',
+                        fontSize: '16px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s',
+                      }}
+                    >
+                      Upload NIfTI Files
+                    </button>
+                    <button
+                      onClick={() => {
+                        setUploadType('stl');
+                        setUploadedNiftiFiles({ image: null, labels: null });
+                        setError('');
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '16px',
+                        background: uploadType === 'stl' ? '#ff6b4a' : 'rgba(255, 255, 255, 0.1)',
+                        border: uploadType === 'stl' ? 'none' : '2px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '12px',
+                        color: 'white',
+                        fontSize: '16px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s',
+                      }}
+                    >
+                      Upload STL File(s)
+                    </button>
+                  </div>
 
-                  <button
-                    onClick={handleGenerateMesh}
-                    style={{
-                      padding: '16px 48px',
-                      background: '#ff6b4a',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '12px',
-                      fontSize: '18px',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#ff5535'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = '#ff6b4a'}
-                  >
-                    Generate Mesh
-                  </button>
+                  {error && (
+                    <div style={{
+                      background: 'rgba(255, 107, 74, 0.2)',
+                      border: '1px solid #ff6b4a',
+                      color: '#ff6b4a',
+                      padding: '16px 24px',
+                      borderRadius: '8px',
+                      marginBottom: '24px',
+                      fontSize: '15px',
+                    }}>
+                      {error}
+                    </div>
+                  )}
 
-                  <button
-                    onClick={() => setUploadedNiftiFile(null)}
-                    style={{
-                      marginTop: '16px',
-                      padding: '8px 24px',
-                      background: 'transparent',
-                      color: 'rgba(255, 255, 255, 0.6)',
-                      border: 'none',
-                      fontSize: '14px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Choose different file
-                  </button>
+                  {/* Drop Zone */}
+                  {uploadType === 'nifti' ? (
+                // NIfTI upload: file listings above drop zone, drop zone always visible until both selected
+                <div style={{ width: '100%' }}>
+                  {/* File listings (appear above drop zone) */}
+                  {(uploadedNiftiFiles.image || uploadedNiftiFiles.labels) && (
+                    <div style={{ marginBottom: '16px' }}>
+                      {/* Image file */}
+                      {uploadedNiftiFiles.image && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          background: 'rgba(74, 222, 128, 0.15)',
+                          border: '1px solid rgba(74, 222, 128, 0.4)',
+                          borderRadius: '12px',
+                          padding: '16px 20px',
+                          marginBottom: '12px',
+                        }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '11px', color: '#4ade80', fontWeight: '600', letterSpacing: '0.5px', marginBottom: '4px' }}>
+                              MRI IMAGE
+                            </div>
+                            <div style={{
+                              fontSize: '15px',
+                              color: 'rgba(255, 255, 255, 0.9)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              {uploadedNiftiFiles.image.name}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setUploadedNiftiFiles(prev => ({ ...prev, image: null }))}
+                            style={{
+                              background: 'rgba(255, 255, 255, 0.1)',
+                              border: 'none',
+                              color: 'rgba(255, 255, 255, 0.6)',
+                              fontSize: '18px',
+                              cursor: 'pointer',
+                              padding: '4px 10px',
+                              marginLeft: '16px',
+                              borderRadius: '6px',
+                              lineHeight: 1,
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 107, 74, 0.3)';
+                              e.currentTarget.style.color = '#ff6b4a';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)';
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Labels file */}
+                      {uploadedNiftiFiles.labels && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          background: 'rgba(255, 107, 74, 0.15)',
+                          border: '1px solid rgba(255, 107, 74, 0.4)',
+                          borderRadius: '12px',
+                          padding: '16px 20px',
+                          marginBottom: '12px',
+                        }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '11px', color: '#ff6b4a', fontWeight: '600', letterSpacing: '0.5px', marginBottom: '4px' }}>
+                              TUMOR LABELS
+                            </div>
+                            <div style={{
+                              fontSize: '15px',
+                              color: 'rgba(255, 255, 255, 0.9)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              {uploadedNiftiFiles.labels.name}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setUploadedNiftiFiles(prev => ({ ...prev, labels: null }))}
+                            style={{
+                              background: 'rgba(255, 255, 255, 0.1)',
+                              border: 'none',
+                              color: 'rgba(255, 255, 255, 0.6)',
+                              fontSize: '18px',
+                              cursor: 'pointer',
+                              padding: '4px 10px',
+                              marginLeft: '16px',
+                              borderRadius: '6px',
+                              lineHeight: 1,
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 107, 74, 0.3)';
+                              e.currentTarget.style.color = '#ff6b4a';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)';
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Drop Zone - always visible unless both files selected */}
+                  {!(uploadedNiftiFiles.image && uploadedNiftiFiles.labels) ? (
+                    <div
+                      onDrop={handleDrop}
+                      onDragEnter={handleDrag}
+                      onDragLeave={handleDrag}
+                      onDragOver={handleDrag}
+                      onClick={() => document.getElementById('file-input')?.click()}
+                      style={{
+                        minHeight: (uploadedNiftiFiles.image || uploadedNiftiFiles.labels) ? '180px' : '280px',
+                        border: `2px dashed ${dragActive ? '#ff6b4a' : 'rgba(255, 255, 255, 0.3)'}`,
+                        borderRadius: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s',
+                        background: dragActive ? 'rgba(255, 107, 74, 0.1)' : 'transparent',
+                      }}
+                    >
+                      <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="rgba(255, 255, 255, 0.5)" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      <p style={{
+                        fontSize: '18px',
+                        fontWeight: '500',
+                        margin: '20px 0 8px 0',
+                      }}>
+                        {(uploadedNiftiFiles.image || uploadedNiftiFiles.labels)
+                          ? `Drop ${!uploadedNiftiFiles.image ? 'MRI image' : 'tumor labels'} file here`
+                          : 'Drop your .nii.gz files here'
+                        }
+                      </p>
+                      <p style={{
+                        fontSize: '14px',
+                        opacity: 0.6,
+                      }}>
+                        or click to browse
+                      </p>
+                      {!(uploadedNiftiFiles.image || uploadedNiftiFiles.labels) && (
+                        <p style={{
+                          fontSize: '13px',
+                          opacity: 0.4,
+                          marginTop: '12px',
+                        }}>
+                          Select MRI image and tumor labels (can be from different folders)
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    /* Generate button when both files selected */
+                    <div style={{ textAlign: 'center', marginTop: '8px' }}>
+                      <button
+                        onClick={handleGenerateMesh}
+                        style={{
+                          padding: '16px 48px',
+                          background: '#ff6b4a',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '12px',
+                          fontSize: '18px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#ff5535'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = '#ff6b4a'}
+                      >
+                        Generate Mesh
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
-                // Drop Zone
+                // STL Drop Zone
                 <div
                   onDrop={handleDrop}
                   onDragEnter={handleDrag}
@@ -590,10 +793,7 @@ export default function App() {
                     fontWeight: '500',
                     margin: '24px 0 8px 0',
                   }}>
-                    {uploadType === 'nifti'
-                      ? 'Drop your .nii.gz file here'
-                      : 'Drop your .stl file(s) here'
-                    }
+                    Drop your .stl file(s) here
                   </p>
                   <p style={{
                     fontSize: '15px',
@@ -603,12 +803,14 @@ export default function App() {
                   </p>
                 </div>
               )}
+                </>
+              )}
 
               <input
                 id="file-input"
                 type="file"
                 accept={uploadType === 'nifti' ? '.gz,.nii' : '.stl'}
-                multiple={uploadType === 'stl'}
+                multiple={true}
                 onChange={(e) => e.target.files && e.target.files.length > 0 && handleFileSelect(e.target.files)}
                 style={{ display: 'none' }}
               />
@@ -849,7 +1051,7 @@ export default function App() {
             textAlign: 'center',
             marginBottom: '48px',
           }}>
-            Have questions? Reach out to our team of experts.
+            Have questions? Reach out to our team.
           </p>
 
           <form onSubmit={handleContactSubmit} style={{

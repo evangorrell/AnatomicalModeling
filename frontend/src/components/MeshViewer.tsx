@@ -106,41 +106,46 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady }: MeshViewer
     };
   }, [stlFiles.tumor]);
 
-  // Center both meshes TOGETHER using the brain's bounding box as reference
+  // Center meshes - use brain as reference if available, otherwise center tumor alone
   useEffect(() => {
-    // Wait for at least the brain to be loaded
-    if (!rawBrainGeometry) {
+    // Need at least one mesh to center
+    if (!rawBrainGeometry && !rawTumorGeometry) {
       return;
     }
 
-    // Compute the brain's bounding box center (use brain as reference)
-    rawBrainGeometry.computeBoundingBox();
-    const brainBox = rawBrainGeometry.boundingBox;
-    if (!brainBox) return;
+    // Determine the reference geometry for centering
+    const referenceGeometry = rawBrainGeometry || rawTumorGeometry;
+    if (!referenceGeometry) return;
+
+    referenceGeometry.computeBoundingBox();
+    const refBox = referenceGeometry.boundingBox;
+    if (!refBox) return;
 
     const center = new THREE.Vector3();
-    brainBox.getCenter(center);
+    refBox.getCenter(center);
 
-    console.log('Centering meshes together using brain center:', center);
+    console.log('Centering meshes using reference center:', center);
 
-    // Clone and translate the brain geometry
-    const centeredBrain = rawBrainGeometry.clone();
-    centeredBrain.translate(-center.x, -center.y, -center.z);
-    setStlBrainGeometry(centeredBrain);
+    // Center brain if it exists
+    if (rawBrainGeometry) {
+      const centeredBrain = rawBrainGeometry.clone();
+      centeredBrain.translate(-center.x, -center.y, -center.z);
+      setStlBrainGeometry(centeredBrain);
+    }
 
-    // If we have a tumor, translate it by the SAME offset (preserving relative position)
+    // Center tumor if it exists (using same offset to preserve relative position)
     if (rawTumorGeometry) {
       const centeredTumor = rawTumorGeometry.clone();
       centeredTumor.translate(-center.x, -center.y, -center.z);
       setStlTumorGeometry(centeredTumor);
 
-      // Log tumor's position relative to brain for verification
+      // Log tumor's position for verification
       centeredTumor.computeBoundingBox();
       const tumorBox = centeredTumor.boundingBox;
       if (tumorBox) {
         const tumorCenter = new THREE.Vector3();
         tumorBox.getCenter(tumorCenter);
-        console.log('Tumor position relative to brain center:', tumorCenter);
+        console.log('Tumor center after centering:', tumorCenter);
       }
     }
   }, [rawBrainGeometry, rawTumorGeometry]);
