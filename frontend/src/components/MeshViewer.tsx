@@ -12,6 +12,11 @@ interface MeshViewerProps {
   stlFiles: { brain: string | null; tumor: string | null }; // For direct STL viewing
   meshState: MeshState;
   onZoomHandlersReady?: (handlers: { zoomIn: () => void; zoomOut: () => void; getCurrentZoom: () => number }) => void;
+  // Crosshair planes for quad-view
+  crosshairPosition?: { x: number; y: number; z: number }; // Normalized -1 to 1
+  showCrosshairPlanes?: boolean;
+  volumeDims?: [number, number, number];
+  voxelSpacing?: [number, number, number];
 }
 
 interface MeshObjectProps {
@@ -39,7 +44,66 @@ function MeshObject({ geometry, color, opacity, visible }: MeshObjectProps) {
   );
 }
 
-function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady }: MeshViewerProps) {
+// Simple yellow crosshair lines for quad-view synchronization
+interface CrosshairLinesProps {
+  position: { x: number; y: number; z: number }; // Normalized -1 to 1
+  size: number; // Size of the lines
+}
+
+function CrosshairLines({ position, size }: CrosshairLinesProps) {
+  const halfSize = size / 2;
+
+  // Convert normalized position to actual coordinates
+  const posX = position.x * halfSize;
+  const posY = position.y * halfSize;
+  const posZ = position.z * halfSize;
+
+  // Use key to force re-render when position changes (buffer geometry doesn't auto-update)
+  const posKey = `${posX.toFixed(2)}-${posY.toFixed(2)}-${posZ.toFixed(2)}`;
+
+  return (
+    <group key={posKey}>
+      {/* X-axis line (left-right) - yellow */}
+      <line>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            count={2}
+            array={new Float32Array([-halfSize, posY, posZ, halfSize, posY, posZ])}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <lineBasicMaterial color="#f1c40f" linewidth={2} />
+      </line>
+      {/* Y-axis line (up-down) - yellow */}
+      <line>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            count={2}
+            array={new Float32Array([posX, -halfSize, posZ, posX, halfSize, posZ])}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <lineBasicMaterial color="#f1c40f" linewidth={2} />
+      </line>
+      {/* Z-axis line (front-back) - yellow */}
+      <line>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            count={2}
+            array={new Float32Array([posX, posY, -halfSize, posX, posY, halfSize])}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <lineBasicMaterial color="#f1c40f" linewidth={2} />
+      </line>
+    </group>
+  );
+}
+
+function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, crosshairPosition, showCrosshairPlanes, volumeDims, voxelSpacing }: MeshViewerProps) {
   const { brain: niftiBrain, tumor: niftiTumor } = useMeshes(studyId);
   const cameraRef = useRef<THREE.PerspectiveCamera>(null);
   const controlsRef = useRef<any>(null);
@@ -274,6 +338,21 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady }: MeshViewer
         </mesh>
       )}
 
+      {/* Crosshair lines for quad-view */}
+      {showCrosshairPlanes && crosshairPosition && (
+        <CrosshairLines
+          position={crosshairPosition}
+          size={volumeDims && voxelSpacing
+            ? Math.max(
+                volumeDims[0] * voxelSpacing[0],
+                volumeDims[1] * voxelSpacing[1],
+                volumeDims[2] * voxelSpacing[2]
+              ) * 1.2
+            : 200
+          }
+        />
+      )}
+
       {/* Orbit controls */}
       <OrbitControls
         ref={controlsRef}
@@ -289,7 +368,16 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady }: MeshViewer
   );
 }
 
-export default function MeshViewer({ studyId, stlFiles, meshState, onZoomHandlersReady }: MeshViewerProps) {
+export default function MeshViewer({
+  studyId,
+  stlFiles,
+  meshState,
+  onZoomHandlersReady,
+  crosshairPosition,
+  showCrosshairPlanes,
+  volumeDims,
+  voxelSpacing,
+}: MeshViewerProps) {
   return (
     <Canvas
       style={{
@@ -304,6 +392,10 @@ export default function MeshViewer({ studyId, stlFiles, meshState, onZoomHandler
         stlFiles={stlFiles}
         meshState={meshState}
         onZoomHandlersReady={onZoomHandlersReady}
+        crosshairPosition={crosshairPosition}
+        showCrosshairPlanes={showCrosshairPlanes}
+        volumeDims={volumeDims}
+        voxelSpacing={voxelSpacing}
       />
     </Canvas>
   );
