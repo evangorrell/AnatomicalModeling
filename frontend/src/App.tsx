@@ -8,6 +8,7 @@ import { io, Socket } from 'socket.io-client';
 import { useMeshes } from './hooks/useMeshes';
 import { useNiftiVolume } from './hooks/useNiftiVolume';
 import { detectBrainAndTumor } from './utils/meshAnalysis';
+import { MeasurementMode } from './measurements/types';
 
 // Uploaded files tracking
 interface UploadedFiles {
@@ -59,6 +60,27 @@ export default function App() {
       opacity: 1.0,
     },
   });
+
+  // Measurement mode state
+  const [measurementMode, setMeasurementMode] = useState<MeasurementMode>('off');
+  const [measurementClearKey, setMeasurementClearKey] = useState(0);
+  const [undoKey, setUndoKey] = useState(0);
+
+  // Keyboard listener for Cmd+Z undo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        // Only handle undo when in viewer mode with measurement mode active
+        if (viewerMode === 'viewer' && measurementMode === 'distance') {
+          e.preventDefault();
+          setUndoKey(k => k + 1);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [viewerMode, measurementMode]);
 
   // Zoom handlers reference (set by MeshViewer)
   const zoomHandlersRef = useRef<{
@@ -713,6 +735,57 @@ export default function App() {
                 <h2 style={{ fontSize: '24px', fontWeight: '700', margin: 0 }}>
                   {viewerType === '3d-only' ? '3D Model Viewer' : 'Medical Imaging Viewer'}
                 </h2>
+
+                {/* Measurement controls - only show for quad view modes */}
+                {viewerType !== '3d-only' && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: '8px',
+                    padding: '4px',
+                  }}>
+                    <span style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', padding: '0 8px' }}>
+                      Measure:
+                    </span>
+                    {(['off', 'distance'] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => setMeasurementMode(mode)}
+                        style={{
+                          padding: '6px 12px',
+                          background: measurementMode === mode ? '#ff6b4a' : 'transparent',
+                          border: 'none',
+                          borderRadius: '6px',
+                          color: measurementMode === mode ? 'white' : 'rgba(255, 255, 255, 0.7)',
+                          fontSize: '12px',
+                          fontWeight: measurementMode === mode ? '600' : '400',
+                          cursor: 'pointer',
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                    <div style={{ width: '1px', height: '20px', background: 'rgba(255, 255, 255, 0.3)', margin: '0 4px' }} />
+                    <button
+                      onClick={() => setMeasurementClearKey(k => k + 1)}
+                      style={{
+                        padding: '6px 12px',
+                        background: 'transparent',
+                        border: '1px solid rgba(255, 255, 255, 0.3)',
+                        borderRadius: '6px',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', gap: '12px' }}>
                   {currentStudyId && (
                     <button
@@ -876,6 +949,9 @@ export default function App() {
                     zoomHandlersRef.current = handlers;
                     setZoomPercentage(Math.round(((500 - handlers.getCurrentZoom()) / 450) * 100));
                   }}
+                  measurementMode={measurementMode}
+                  measurementClearKey={measurementClearKey}
+                  undoKey={undoKey}
                 />
               ) : niftiLoading ? (
                 <div style={{

@@ -3,11 +3,23 @@ import { NiftiVolume } from '../hooks/useNiftiVolume';
 import SliceViewer from './SliceViewer';
 import MeshViewer from './MeshViewer';
 import { MeshState } from '../types';
+import {
+  Point2D,
+  Measurement,
+  MeasurementMode,
+  PlaneType,
+  MeasurementState,
+  initialMeasurementState,
+} from '../measurements/types';
+import {
+  calculateDistanceMm,
+  generateMeasurementId,
+} from '../measurements/math';
 
 interface CrosshairPosition {
-  x: number; // Sagittal position (left-right)
-  y: number; // Coronal position (front-back)
-  z: number; // Axial position (top-bottom)
+  x: number;
+  y: number;
+  z: number;
 }
 
 interface QuadViewProps {
@@ -17,6 +29,9 @@ interface QuadViewProps {
   meshState: MeshState;
   onMeshStateChange: (updates: Partial<MeshState>) => void;
   onZoomHandlersReady?: (handlers: { zoomIn: () => void; zoomOut: () => void; getCurrentZoom: () => number }) => void;
+  measurementMode?: MeasurementMode;
+  measurementClearKey?: number;
+  undoKey?: number;
 }
 
 export default function QuadView({
@@ -26,17 +41,23 @@ export default function QuadView({
   meshState,
   onMeshStateChange,
   onZoomHandlersReady,
+  measurementMode = 'off',
+  measurementClearKey = 0,
+  undoKey = 0,
 }: QuadViewProps) {
   const [dims] = useState(() => volume.dims);
 
-  // Crosshair position (in voxel coordinates)
   const [crosshair, setCrosshair] = useState<CrosshairPosition>(() => ({
     x: Math.floor(volume.dims[0] / 2),
     y: Math.floor(volume.dims[1] / 2),
     z: Math.floor(volume.dims[2] / 2),
   }));
 
-  // Update crosshair when volume changes
+  const [measurementState, setMeasurementState] = useState<MeasurementState>(initialMeasurementState);
+
+  // Track which panel was last modified for undo
+  const lastModifiedPanelRef = useRef<PlaneType | null>(null);
+
   useEffect(() => {
     setCrosshair({
       x: Math.floor(volume.dims[0] / 2),
@@ -44,6 +65,137 @@ export default function QuadView({
       z: Math.floor(volume.dims[2] / 2),
     });
   }, [volume]);
+
+  // Clear measurements when clear key changes
+  useEffect(() => {
+    if (measurementClearKey > 0) {
+      setMeasurementState(initialMeasurementState);
+      lastModifiedPanelRef.current = null;
+    }
+  }, [measurementClearKey]);
+
+  // Undo last measurement when undo key changes
+  useEffect(() => {
+    if (undoKey > 0) {
+      setMeasurementState(prev => {
+        // First, check if there are any draft points to clear
+        for (const panel of ['axial', 'coronal', 'sagittal'] as PlaneType[]) {
+          if (prev.draftByPanel[panel].length > 0) {
+            return {
+              ...prev,
+              draftByPanel: {
+                ...prev.draftByPanel,
+                [panel]: [],
+              },
+            };
+          }
+        }
+
+        // Otherwise, remove the most recent measurement (by createdAt)
+        let latestPanel: PlaneType | null = null;
+        let latestTime = 0;
+
+        for (const panel of ['axial', 'coronal', 'sagittal'] as PlaneType[]) {
+          const measurements = prev.measurementsByPanel[panel];
+          if (measurements.length > 0) {
+            const lastMeasurement = measurements[measurements.length - 1];
+            if (lastMeasurement.createdAt > latestTime) {
+              latestTime = lastMeasurement.createdAt;
+              latestPanel = panel;
+            }
+          }
+        }
+
+        if (latestPanel) {
+          return {
+            ...prev,
+            measurementsByPanel: {
+              ...prev.measurementsByPanel,
+              [latestPanel]: prev.measurementsByPanel[latestPanel].slice(0, -1),
+            },
+          };
+        }
+
+        return prev;
+      });
+    }
+  }, [undoKey]);
+
+  // Handle measurement click for a specific panel
+  const handleMeasurementClick = useCallback((panel: PlaneType, point: Point2D) => {
+    if (measurementMode === 'off') return;
+
+    lastModifiedPanelRef.current = panel;
+
+    setMeasurementState(prev => {
+      const currentDraft = [...prev.draftByPanel[panel], point];
+
+      if (currentDraft.length < 2) {
+        return {
+          ...prev,
+          draftByPanel: {
+            ...prev.draftByPanel,
+            [panel]: currentDraft,
+          },
+        };
+      }
+
+      const [A, B] = currentDraft;
+      const mm = calculateDistanceMm(A, B, panel, volume.pixDims);
+      const newMeasurement: Measurement = {
+        kind: 'distance',
+        id: generateMeasurementId(),
+        A,
+        B,
+        mm,
+        createdAt: Date.now(),
+      };
+
+      return {
+        ...prev,
+        measurementsByPanel: {
+          ...prev.measurementsByPanel,
+          [panel]: [...prev.measurementsByPanel[panel], newMeasurement],
+        },
+        draftByPanel: {
+          ...prev.draftByPanel,
+          [panel]: [],
+        },
+      };
+    });
+  }, [measurementMode, volume.pixDims]);
+
+  // Handle dragging a measurement point
+  const handleMeasurementPointDrag = useCallback((panel: PlaneType, measurementId: string, pointKey: 'A' | 'B', newPoint: Point2D) => {
+    setMeasurementState(prev => {
+      const measurements = prev.measurementsByPanel[panel];
+      const idx = measurements.findIndex(m => m.id === measurementId);
+      if (idx === -1) return prev;
+
+      const measurement = measurements[idx];
+      const updatedA = pointKey === 'A' ? newPoint : measurement.A;
+      const updatedB = pointKey === 'B' ? newPoint : measurement.B;
+      const mm = calculateDistanceMm(updatedA, updatedB, panel, volume.pixDims);
+
+      const updatedMeasurement: Measurement = {
+        ...measurement,
+        A: updatedA,
+        B: updatedB,
+        mm,
+      };
+
+      const newMeasurements = [...measurements];
+      newMeasurements[idx] = updatedMeasurement;
+
+      return {
+        ...prev,
+        measurementsByPanel: {
+          ...prev.measurementsByPanel,
+          [panel]: newMeasurements,
+        },
+      };
+    });
+  }, [volume.pixDims]);
 
   // Handlers for each slice viewer
   const handleAxialSliceChange = useCallback((z: number) => {
@@ -70,14 +222,12 @@ export default function QuadView({
     setCrosshair(prev => ({ ...prev, y, z }));
   }, []);
 
-  // Convert crosshair to normalized coordinates for 3D view (-1 to 1)
   const normalizedCrosshair = {
     x: (crosshair.x / dims[0]) * 2 - 1,
     y: (crosshair.y / dims[1]) * 2 - 1,
     z: (crosshair.z / dims[2]) * 2 - 1,
   };
 
-  // Zoom handlers
   const zoomHandlersRef = useRef<{
     zoomIn: () => void;
     zoomOut: () => void;
@@ -122,6 +272,11 @@ export default function QuadView({
         onCrosshairChange={handleAxialCrosshairChange}
         color="#e74c3c"
         label="Axial"
+        measurementMode={measurementMode}
+        measurements={measurementState.measurementsByPanel.axial}
+        draftPoints={measurementState.draftByPanel.axial}
+        onMeasurementClick={(p) => handleMeasurementClick('axial', p)}
+        onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('axial', id, key, pt)}
       />
 
       {/* Top Right: 3D View (Blue) */}
@@ -145,9 +300,7 @@ export default function QuadView({
         }}>
           <span>3D View</span>
 
-          {/* Controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            {/* Zoom */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <button
                 onClick={handleZoomOut}
@@ -194,7 +347,6 @@ export default function QuadView({
               </button>
             </div>
 
-            {/* Brain opacity */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '11px', color: '#b0b0b0' }}>Brain</span>
               <input
@@ -210,7 +362,6 @@ export default function QuadView({
               />
             </div>
 
-            {/* Tumor opacity */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '11px', color: '#ff6b4a' }}>Tumor</span>
               <input
@@ -257,6 +408,11 @@ export default function QuadView({
         onCrosshairChange={handleCoronalCrosshairChange}
         color="#2ecc71"
         label="Coronal"
+        measurementMode={measurementMode}
+        measurements={measurementState.measurementsByPanel.coronal}
+        draftPoints={measurementState.draftByPanel.coronal}
+        onMeasurementClick={(p) => handleMeasurementClick('coronal', p)}
+        onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('coronal', id, key, pt)}
       />
 
       {/* Bottom Right: Sagittal (Yellow) */}
@@ -270,6 +426,11 @@ export default function QuadView({
         onCrosshairChange={handleSagittalCrosshairChange}
         color="#f1c40f"
         label="Sagittal"
+        measurementMode={measurementMode}
+        measurements={measurementState.measurementsByPanel.sagittal}
+        draftPoints={measurementState.draftByPanel.sagittal}
+        onMeasurementClick={(p) => handleMeasurementClick('sagittal', p)}
+        onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('sagittal', id, key, pt)}
       />
     </div>
   );
