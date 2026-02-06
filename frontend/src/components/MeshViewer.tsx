@@ -54,7 +54,8 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
   const halfSize = size / 2;
 
   // Convert normalized position to actual coordinates
-  const posX = position.x * halfSize;
+  // Negate X to fix sagittal tracking direction
+  const posX = -position.x * halfSize;
   const posY = position.y * halfSize;
   const posZ = position.z * halfSize;
 
@@ -254,7 +255,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, crosshairPos
           const target = controls.target;
           const direction = new THREE.Vector3().subVectors(camera.position, target);
           const currentDistance = direction.length();
-          const newDistance = Math.max(50, currentDistance - 20); // Min distance 50
+          const newDistance = Math.max(10, currentDistance - 20); // Min distance 10 to prevent going through object
 
           direction.normalize().multiplyScalar(newDistance);
           camera.position.copy(target).add(direction);
@@ -265,7 +266,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, crosshairPos
           const target = controls.target;
           const direction = new THREE.Vector3().subVectors(camera.position, target);
           const currentDistance = direction.length();
-          const newDistance = Math.min(500, currentDistance + 20); // Max distance 500
+          const newDistance = currentDistance + 20; // No max limit
 
           direction.normalize().multiplyScalar(newDistance);
           camera.position.copy(target).add(direction);
@@ -283,11 +284,12 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, crosshairPos
 
   return (
     <>
-      {/* Camera - static initial position, controlled via refs */}
+      {/* Camera - view from below (bottom of brain facing user), back at bottom, front at top, 63% zoom */}
       <PerspectiveCamera
         ref={cameraRef}
         makeDefault
-        position={[0, 0, 200]}
+        position={[0, 0, -216]}
+        up={[0, 1, 0]}
         fov={50}
       />
 
@@ -353,7 +355,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, crosshairPos
         />
       )}
 
-      {/* Orbit controls */}
+      {/* Orbit controls - no distance restrictions */}
       <OrbitControls
         ref={controlsRef}
         enableDamping
@@ -361,8 +363,6 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, crosshairPos
         rotateSpeed={0.5}
         zoomSpeed={0.8}
         panSpeed={0.5}
-        minDistance={50}
-        maxDistance={500}
       />
     </>
   );
