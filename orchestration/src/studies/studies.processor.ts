@@ -92,16 +92,19 @@ export class StudiesProcessor extends WorkerHost {
       const meshMetadata = await this.runMeshGeneration(studyId, maskPath, meshDir);
       await this.emitProgress(studyId, 95, 'mesh_generation', '3D meshes generated');
 
-      // Upload mesh files to S3
+      // Upload mesh files to S3 and track which ones exist
       const meshFiles = ['brain.stl', 'brain.obj', 'brain.mtl', 'tumor.stl', 'tumor.obj', 'tumor.mtl', 'mesh_metadata.json'];
+      const uploadedMeshFiles: string[] = [];
       for (const meshFile of meshFiles) {
         const meshFilePath = path.join(meshDir, meshFile);
         if (fs.existsSync(meshFilePath)) {
           const meshS3Key = `studies/${studyId}/meshes/${meshFile}`;
           const contentType = this.getContentType(meshFile);
           await this.uploadToS3(meshS3Key, fs.readFileSync(meshFilePath), contentType);
+          uploadedMeshFiles.push(meshFile);
         }
       }
+      this.logger.log(`Uploaded ${uploadedMeshFiles.length} mesh files to S3`);
 
       // Stage 4: Finalizing (95-100%)
       await this.emitProgress(studyId, 95, 'finalizing', 'Saving results...');
@@ -145,15 +148,16 @@ export class StudiesProcessor extends WorkerHost {
         fs.cpSync(tempOutputDir, resultsDir, { recursive: true, force: true });
       }
 
-      // Cleanup temp files
-      fs.rmSync(tempDir, { recursive: true, force: true });
-
-      // Emit completion event
+      // Emit completion event BEFORE cleanup (use tracked list)
+      this.logger.log(`Emitting complete event for study ${studyId}`);
       this.progressGateway.emitComplete(studyId, {
         studyId,
         status: 'completed',
-        meshes: meshFiles.filter(f => fs.existsSync(path.join(meshDir, f))),
+        meshes: uploadedMeshFiles,
       });
+
+      // Cleanup temp files AFTER emitting completion
+      fs.rmSync(tempDir, { recursive: true, force: true });
 
       return { studyId, status: 'completed' };
     } catch (error) {

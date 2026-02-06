@@ -5,6 +5,7 @@ import logging
 import sys
 from pathlib import Path
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.prep.resample import VolumeResampler
 from src.seg.classical import ClassicalSegmenter
@@ -119,6 +120,19 @@ def cmd_segment(args):
 
             # Load label file
             label_img = sitk.ReadImage(args.use_labels)
+            logger.info(f"Label file dimensions: {label_img.GetDimension()}, size: {label_img.GetSize()}")
+
+            # Handle 4D label files (extract first channel if needed)
+            if label_img.GetDimension() == 4:
+                logger.info(f"4D label file detected, extracting to 3D...")
+                extractor = sitk.ExtractImageFilter()
+                size = list(label_img.GetSize())
+                size[3] = 0  # Collapse 4th dimension
+                extractor.SetSize(size)
+                extractor.SetIndex([0, 0, 0, 0])
+                label_img = extractor.Execute(label_img)
+                logger.info(f"Extracted 3D label: size={label_img.GetSize()}")
+
             label_arr = sitk.GetArrayFromImage(label_img)
 
             # Parse tumor labels
@@ -157,14 +171,14 @@ def cmd_segment(args):
 
             logger.info(f"Brain voxels from image: {brain_mask.sum():,}")
 
-            # Create multi-class mask: brain (excluding tumor) = 1, tumor = 2
-            multi_class = np.zeros_like(label_arr, dtype=np.uint8)
+            # Create multi-class mask based on image shape (guaranteed 3D)
+            multi_class = np.zeros_like(image_arr, dtype=np.uint8)
             multi_class[brain_mask & ~tumor_mask] = 1  # Brain tissue
             multi_class[tumor_mask] = 2  # Tumor (from ground truth)
 
-            # Create SimpleITK image
+            # Create SimpleITK image - copy info from 'image' (guaranteed 3D)
             mask = sitk.GetImageFromArray(multi_class)
-            mask.CopyInformation(label_img)
+            mask.CopyInformation(image)
 
             # Save mask
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -340,18 +354,15 @@ def cmd_mesh(args):
         }
 
         # Initialize Marching Cubes
-        mc = MarchingCubes(step_size=args.step_size)
+        step_size = args.step_size
 
         meshes_metadata = {}
 
-        # Generate mesh for each label
-        for idx, label in enumerate(labels):
-            label_name = label_names.get(label, f"label_{label}")
-            label_color = label_colors.get(label, (0.5, 0.5, 0.5))
+        def process_single_label(label, label_name, label_color):
+            """Process a single label: marching cubes + postprocess + export. Thread-safe."""
+            from src.surf.marching_cubes import MarchingCubes, Mesh
 
-            # Progress per label: 20% + (70% / num_labels) * idx
-            base_progress = 20 + int((70 / len(labels)) * idx)
-            print(f"PROGRESS: {base_progress} - Processing {label_name}...", flush=True)
+            mc = MarchingCubes(step_size=step_size)
 
             logger.info(f"\n{'='*60}")
             logger.info(f"Processing label {label}: {label_name}")
@@ -362,7 +373,6 @@ def cmd_mesh(args):
             logger.info(f"Label {label} voxels: {binary_mask.sum():,}")
 
             # Extract surface
-            print(f"PROGRESS: {base_progress + 5} - Running Marching Cubes for {label_name}...", flush=True)
             mesh = mc.extract_surface(
                 binary_mask,
                 level=0.5,
@@ -374,146 +384,96 @@ def cmd_mesh(args):
 
             if mesh.n_vertices == 0:
                 logger.warning(f"No mesh generated for label {label}")
-                continue
+                return None
 
-            logger.info(f"Raw Marching Cubes output: {mesh.n_vertices:,} vertices, {mesh.n_faces:,} faces")
+            logger.info(f"[{label_name}] Raw Marching Cubes: {mesh.n_vertices:,} vertices, {mesh.n_faces:,} faces")
 
             # Flip X-axis to correct for radiological vs neurological convention
-            # This ensures the tumor appears on the correct side in the 3D viewer
             mesh.vertices[:, 0] = -mesh.vertices[:, 0]
             if mesh.normals is not None:
                 mesh.normals[:, 0] = -mesh.normals[:, 0]
-            # Also flip face winding order to maintain correct normals after X-flip
             mesh.faces = mesh.faces[:, ::-1]
-            logger.info("Applied X-flip for correct laterality in viewer")
+            logger.info(f"[{label_name}] Applied X-flip for correct laterality")
 
             # Phase A4: Post-process mesh (if enabled)
             if not args.no_postprocess:
-                print(f"PROGRESS: {base_progress + 10} - Post-processing {label_name} mesh...", flush=True)
-                logger.info(f"\nPhase A4: Post-processing mesh...")
+                logger.info(f"[{label_name}] Post-processing mesh...")
                 vertices, faces, normals = postprocess_mesh(
                     mesh.vertices,
                     mesh.faces,
                     mesh.normals,
                     fill_holes=not args.no_fill_holes,
                     smooth=not args.no_smooth,
-                    repair_manifold=False,  # Disabled for medical meshes (too aggressive)
+                    repair_manifold=False,
                     decimate=args.decimate,
                     target_reduction=args.decimation_target,
                 )
-
-                # Create new mesh with post-processed data
-                from src.surf.marching_cubes import Mesh
                 mesh = Mesh(vertices=vertices, faces=faces, normals=normals)
+                logger.info(f"[{label_name}] Post-processed: {mesh.n_vertices:,} vertices, {mesh.n_faces:,} faces")
 
-                logger.info(f"Post-processed output: {mesh.n_vertices:,} vertices, {mesh.n_faces:,} faces")
+            # Export files
+            formats = args.formats.split(',')
+            for fmt in formats:
+                fmt = fmt.strip().lower()
+                if fmt == 'stl':
+                    export_stl(mesh.vertices, mesh.faces, output_dir / f"{label_name}.stl",
+                               normals=mesh.normals, binary=not args.ascii, label=label_name)
+                elif fmt == 'obj':
+                    export_obj(mesh.vertices, mesh.faces, output_dir / f"{label_name}.obj",
+                               normals=mesh.normals, label=label_name, material_color=label_color)
+                elif fmt == 'ply':
+                    color_255 = (np.array(label_color) * 255).astype(np.uint8)
+                    colors = np.tile(color_255, (mesh.n_vertices, 1))
+                    export_ply(mesh.vertices, mesh.faces, output_dir / f"{label_name}.ply",
+                               normals=mesh.normals, colors=colors, binary=not args.ascii)
 
-            # Store metadata with explicit role (NIfTI pipeline knows roles with certainty)
+            logger.info(f"[{label_name}] Export complete")
+
+            # Return metadata
             mesh_role = "brain" if label_name == "brain" else "tumor" if label_name == "tumor" else "unknown"
-            meshes_metadata[label_name] = {
+            return {
+                "label_name": label_name,
                 "label_value": int(label),
                 "vertices": mesh.n_vertices,
                 "faces": mesh.n_faces,
                 "voxels": int(binary_mask.sum()),
                 "post_processed": not args.no_postprocess,
                 "role": mesh_role,
-                "confidence": 1.0,  # NIfTI pipeline has 100% confidence
+                "confidence": 1.0,
             }
 
-            # Debug mode: verify mesh coordinates
-            if args.debug:
-                logger.info(f"\n--- DEBUG: {label_name} mesh diagnostics ---")
+        # Process labels in PARALLEL for speed
+        print(f"PROGRESS: 20 - Processing {len(labels)} structures in parallel...", flush=True)
+        logger.info(f"\n*** PARALLEL PROCESSING: {len(labels)} labels simultaneously ***")
 
-                # Compute mask stats for this label
-                label_mask_stats = compute_image_diagnostics(
-                    mask_img, name=f"mask_{label_name}", mask_label=int(label)
-                )
-                debug_stats[f"mask_{label_name}"] = label_mask_stats
-                logger.info(f"\nMask stats for {label_name}:")
-                print_diagnostics(label_mask_stats, indent=1)
+        with ThreadPoolExecutor(max_workers=len(labels)) as executor:
+            futures = {}
+            for label in labels:
+                label_name = label_names.get(label, f"label_{label}")
+                label_color = label_colors.get(label, (0.5, 0.5, 0.5))
+                future = executor.submit(process_single_label, label, label_name, label_color)
+                futures[future] = label_name
 
-                # Compute mesh stats
-                mesh_stats = compute_mesh_diagnostics(
-                    mesh.vertices, mesh.faces, name=f"mesh_{label_name}"
-                )
-                debug_stats[f"mesh_{label_name}"] = mesh_stats
-                logger.info(f"\nMesh stats for {label_name}:")
-                print_diagnostics(mesh_stats, indent=1)
+            # Collect results as they complete
+            for future in as_completed(futures):
+                label_name = futures[future]
+                try:
+                    result = future.result()
+                    if result:
+                        meshes_metadata[result["label_name"]] = {
+                            k: v for k, v in result.items() if k != "label_name"
+                        }
+                        print(f"PROGRESS: 60 - {label_name} mesh complete", flush=True)
+                except Exception as e:
+                    logger.error(f"[{label_name}] Failed: {e}", exc_info=True)
 
-                # Verify consistency
-                consistency = verify_mask_mesh_consistency(
-                    label_mask_stats, mesh_stats, tolerance_mm=10.0
-                )
-                debug_stats[f"consistency_{label_name}"] = consistency
-                logger.info(f"\nConsistency check for {label_name}:")
-                print_diagnostics(consistency, indent=1)
-
-                if not consistency["passed"]:
-                    logger.warning(f"⚠️  CONSISTENCY CHECK FAILED for {label_name}!")
-                    for error in consistency["errors"]:
-                        logger.warning(f"   {error}")
-                else:
-                    logger.info(f"✓ Consistency check PASSED for {label_name}")
-
-                # Generate overlay images (need original image for this)
-                # For now, use the mask as both image and mask
-                save_debug_overlays(
-                    mask_img, mask_img,
-                    debug_dir / "overlays",
-                    label=int(label),
-                    name=label_name,
-                )
-
-            # Export in requested formats
-            print(f"PROGRESS: {base_progress + 15} - Exporting {label_name} files...", flush=True)
-            formats = args.formats.split(',')
-
-            for fmt in formats:
-                fmt = fmt.strip().lower()
-
-                if fmt == 'stl':
-                    stl_path = output_dir / f"{label_name}.stl"
-                    export_stl(
-                        mesh.vertices,
-                        mesh.faces,
-                        stl_path,
-                        normals=mesh.normals,
-                        binary=not args.ascii,
-                        label=label_name,
-                    )
-
-                elif fmt == 'obj':
-                    obj_path = output_dir / f"{label_name}.obj"
-                    export_obj(
-                        mesh.vertices,
-                        mesh.faces,
-                        obj_path,
-                        normals=mesh.normals,
-                        label=label_name,
-                        material_color=label_color,
-                    )
-
-                elif fmt == 'ply':
-                    ply_path = output_dir / f"{label_name}.ply"
-                    # Convert color to 0-255 range for PLY
-                    color_255 = (np.array(label_color) * 255).astype(np.uint8)
-                    colors = np.tile(color_255, (mesh.n_vertices, 1))
-                    export_ply(
-                        mesh.vertices,
-                        mesh.faces,
-                        ply_path,
-                        normals=mesh.normals,
-                        colors=colors,
-                        binary=not args.ascii,
-                    )
-
-                else:
-                    logger.warning(f"Unknown format: {fmt}")
+        print(f"PROGRESS: 85 - All meshes generated", flush=True)
 
         # Progress: 90%
         print("PROGRESS: 90 - Saving metadata...", flush=True)
 
         # Save metadata
+        formats = args.formats.split(',')
         metadata_path = output_dir / "mesh_metadata.json"
         metadata = {
             "input_file": str(input_path),

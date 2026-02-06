@@ -117,40 +117,16 @@ export default function App() {
         return;
       }
 
-      // Labels files typically have "seg", "label", "mask", or "truth" in name
-      const labelPatterns = /seg|label|mask|truth|gt/i;
-
-      // Process new files and add to existing selection
+      // Simply assign files to available slots - backend will sort by size
+      // (larger file = MRI image, smaller file = tumor labels)
       let newImage = uploadedNiftiFiles.image;
       let newLabels = uploadedNiftiFiles.labels;
 
       for (const file of fileArray) {
-        const isLabelsFile = labelPatterns.test(file.name);
-
-        if (isLabelsFile) {
-          if (newLabels) {
-            // Already have labels, put this as image instead
-            if (!newImage) {
-              newImage = file;
-            } else {
-              setError('Both slots are filled. Remove a file first.');
-              return;
-            }
-          } else {
-            newLabels = file;
-          }
-        } else {
-          if (newImage) {
-            // Already have image, put this as labels instead
-            if (!newLabels) {
-              newLabels = file;
-            } else {
-              setError('Both slots are filled. Remove a file first.');
-              return;
-            }
-          } else {
-            newImage = file;
-          }
+        if (!newImage) {
+          newImage = file;
+        } else if (!newLabels) {
+          newLabels = file;
         }
       }
 
@@ -578,22 +554,19 @@ export default function App() {
                   {/* File listings (appear above drop zone) */}
                   {(uploadedNiftiFiles.image || uploadedNiftiFiles.labels) && (
                     <div style={{ marginBottom: '16px' }}>
-                      {/* Image file */}
+                      {/* First file */}
                       {uploadedNiftiFiles.image && (
                         <div style={{
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          background: 'rgba(74, 222, 128, 0.15)',
-                          border: '1px solid rgba(74, 222, 128, 0.4)',
+                          background: 'rgba(255, 255, 255, 0.08)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
                           borderRadius: '12px',
                           padding: '16px 20px',
                           marginBottom: '12px',
                         }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '11px', color: '#4ade80', fontWeight: '600', letterSpacing: '0.5px', marginBottom: '4px' }}>
-                              MRI IMAGE
-                            </div>
                             <div style={{
                               fontSize: '15px',
                               color: 'rgba(255, 255, 255, 0.9)',
@@ -602,6 +575,9 @@ export default function App() {
                               whiteSpace: 'nowrap',
                             }}>
                               {uploadedNiftiFiles.image.name}
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.5)', marginTop: '4px' }}>
+                              {(uploadedNiftiFiles.image.size / 1024 / 1024).toFixed(2)} MB
                             </div>
                           </div>
                           <button
@@ -631,22 +607,19 @@ export default function App() {
                         </div>
                       )}
 
-                      {/* Labels file */}
+                      {/* Second file */}
                       {uploadedNiftiFiles.labels && (
                         <div style={{
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          background: 'rgba(255, 107, 74, 0.15)',
-                          border: '1px solid rgba(255, 107, 74, 0.4)',
+                          background: 'rgba(255, 255, 255, 0.08)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
                           borderRadius: '12px',
                           padding: '16px 20px',
                           marginBottom: '12px',
                         }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '11px', color: '#ff6b4a', fontWeight: '600', letterSpacing: '0.5px', marginBottom: '4px' }}>
-                              TUMOR LABELS
-                            </div>
                             <div style={{
                               fontSize: '15px',
                               color: 'rgba(255, 255, 255, 0.9)',
@@ -655,6 +628,9 @@ export default function App() {
                               whiteSpace: 'nowrap',
                             }}>
                               {uploadedNiftiFiles.labels.name}
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.5)', marginTop: '4px' }}>
+                              {(uploadedNiftiFiles.labels.size / 1024 / 1024).toFixed(2)} MB
                             </div>
                           </div>
                           <button
@@ -681,6 +657,17 @@ export default function App() {
                           >
                             ×
                           </button>
+                        </div>
+                      )}
+
+                      {/* Info note when both files selected */}
+                      {uploadedNiftiFiles.image && uploadedNiftiFiles.labels && (
+                        <div style={{
+                          fontSize: '12px',
+                          color: 'rgba(255, 255, 255, 0.5)',
+                          textAlign: 'center',
+                          marginTop: '8px',
+                        }}>
                         </div>
                       )}
                     </div>

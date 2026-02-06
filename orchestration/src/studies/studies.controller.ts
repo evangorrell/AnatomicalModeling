@@ -97,16 +97,31 @@ export class StudiesController {
       throw new BadRequestException('Both image and labels files are required');
     }
 
-    const imageFile = files.image[0];
-    const labelsFile = files.labels[0];
+    let file1 = files.image[0];
+    let file2 = files.labels[0];
 
     // Validate file types
-    const isImageNifti = imageFile.originalname.endsWith('.nii.gz') || imageFile.originalname.endsWith('.nii');
-    const isLabelsNifti = labelsFile.originalname.endsWith('.nii.gz') || labelsFile.originalname.endsWith('.nii');
+    const isFile1Nifti = file1.originalname.endsWith('.nii.gz') || file1.originalname.endsWith('.nii');
+    const isFile2Nifti = file2.originalname.endsWith('.nii.gz') || file2.originalname.endsWith('.nii');
 
-    if (!isImageNifti || !isLabelsNifti) {
+    if (!isFile1Nifti || !isFile2Nifti) {
       throw new BadRequestException('Both files must be NIfTI volumes (.nii.gz or .nii)');
     }
+
+    // Determine which is image vs labels based on file size
+    // MRI images are typically MB, tumor labels are typically KB (sparse masks)
+    let imageFile: Express.Multer.File;
+    let labelsFile: Express.Multer.File;
+
+    if (file1.size >= file2.size) {
+      imageFile = file1;
+      labelsFile = file2;
+    } else {
+      imageFile = file2;
+      labelsFile = file1;
+    }
+
+    console.log(`File assignment by size: Image="${imageFile.originalname}" (${(imageFile.size / 1024 / 1024).toFixed(2)} MB), Labels="${labelsFile.originalname}" (${(labelsFile.size / 1024).toFixed(2)} KB)`);
 
     const { study, jobId } = await this.studiesService.processUploadWithLabels(imageFile, labelsFile);
 
