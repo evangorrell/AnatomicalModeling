@@ -723,6 +723,7 @@ export default function App() {
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
+            minWidth: '800px',
           }}>
             {/* Wrapper for header + viewer to share same width */}
             <div style={{
@@ -740,8 +741,9 @@ export default function App() {
                 alignItems: 'center',
                 marginBottom: '12px',
                 flexShrink: 0,
+                gap: 'clamp(8px, 2vw, 16px)',
               }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '700', margin: 0 }}>
+                <h2 style={{ fontSize: 'clamp(16px, 2.5vw, 20px)', fontWeight: '700', margin: 0, whiteSpace: 'nowrap', flexShrink: 0 }}>
                   {viewerType === '3d-only' ? '3D Model Viewer' : 'Medical Imaging Viewer'}
                 </h2>
 
@@ -752,60 +754,69 @@ export default function App() {
                     alignItems: 'center',
                     gap: '8px',
                     background: 'hsl(var(--secondary))',
-                    borderRadius: '8px',
-                    padding: '4px',
+                    borderRadius: '6px',
+                    padding: '4px 10px',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 1,
+                    minWidth: 0,
                   }}>
-                    <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', padding: '0 8px' }}>
-                      Crosshairs:
-                    </span>
-                    <button
-                      onClick={() => setShowCrosshairs(!showCrosshairs)}
-                      style={{
-                        padding: '6px 12px',
-                        background: showCrosshairs ? 'hsl(var(--primary))' : 'transparent',
-                        border: 'none',
-                        borderRadius: '6px',
-                        color: showCrosshairs ? 'hsl(var(--primary-foreground))' : 'hsl(var(--muted-foreground))',
-                        fontSize: '12px',
-                        fontWeight: showCrosshairs ? '600' : '400',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {showCrosshairs ? 'On' : 'Off'}
-                    </button>
-                    <div style={{ width: '1px', height: '20px', background: 'hsl(var(--border))', margin: '0 4px' }} />
-                    <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', padding: '0 8px' }}>
-                      Measure:
-                    </span>
-                    {(['off', 'distance'] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        onClick={() => setMeasurementMode(mode)}
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '12px',
+                      color: 'hsl(var(--foreground))',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={showCrosshairs}
+                        onChange={(e) => setShowCrosshairs(e.target.checked)}
                         style={{
-                          padding: '6px 12px',
-                          background: measurementMode === mode ? 'hsl(var(--primary))' : 'transparent',
-                          border: 'none',
-                          borderRadius: '6px',
-                          color: measurementMode === mode ? 'hsl(var(--primary-foreground))' : 'hsl(var(--muted-foreground))',
-                          fontSize: '12px',
-                          fontWeight: measurementMode === mode ? '600' : '400',
+                          width: '12px',
+                          height: '12px',
+                          accentColor: 'hsl(var(--primary))',
                           cursor: 'pointer',
                         }}
-                      >
-                        {mode === 'distance' ? 'On' : 'Off'}
-                      </button>
-                    ))}
-                    <div style={{ width: '1px', height: '20px', background: 'hsl(var(--border))', margin: '0 4px' }} />
+                      />
+                      Crosshairs
+                    </label>
+                    <div style={{ width: '1px', height: '14px', background: 'hsl(var(--border))', flexShrink: 0 }} />
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '12px',
+                      color: 'hsl(var(--foreground))',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={measurementMode === 'distance'}
+                        onChange={(e) => setMeasurementMode(e.target.checked ? 'distance' : 'off')}
+                        style={{
+                          width: '12px',
+                          height: '12px',
+                          accentColor: 'hsl(var(--primary))',
+                          cursor: 'pointer',
+                        }}
+                      />
+                      Measure
+                    </label>
+                    <div style={{ width: '1px', height: '14px', background: 'hsl(var(--border))', flexShrink: 0 }} />
                     <button
                       onClick={() => setMeasurementClearKey(k => k + 1)}
                       style={{
-                        padding: '6px 12px',
+                        padding: '2px 8px',
                         background: 'transparent',
                         border: '1px solid hsl(var(--border))',
-                        borderRadius: '6px',
+                        borderRadius: '4px',
                         color: 'hsl(var(--muted-foreground))',
-                        fontSize: '12px',
+                        fontSize: '11px',
                         cursor: 'pointer',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       Clear
@@ -813,7 +824,7 @@ export default function App() {
                   </div>
                 )}
 
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                   {currentStudyId && (
                     <button
                       onClick={handleDownload}
@@ -822,12 +833,13 @@ export default function App() {
                         background: 'hsl(var(--primary))',
                         color: 'hsl(var(--primary-foreground))',
                         border: 'none',
-                        padding: '12px 24px',
-                        borderRadius: '8px',
-                        fontSize: '14px',
+                        padding: '6px 16px',
+                        borderRadius: '6px',
+                        fontSize: '13px',
                         fontWeight: '600',
                         cursor: downloading ? 'not-allowed' : 'pointer',
                         opacity: downloading ? 0.6 : 1,
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       {downloading ? 'Downloading...' : 'Download STLs'}
@@ -836,14 +848,15 @@ export default function App() {
                   <button
                     onClick={resetViewer}
                     style={{
-                      padding: '12px 24px',
+                      padding: '6px 16px',
                       background: 'hsl(var(--secondary))',
                       border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
+                      borderRadius: '6px',
                       color: 'hsl(var(--foreground))',
-                      fontSize: '14px',
+                      fontSize: '13px',
                       fontWeight: '500',
                       cursor: 'pointer',
+                      whiteSpace: 'nowrap',
                     }}
                   >
                     ← Back to Upload
@@ -963,6 +976,9 @@ export default function App() {
                   onZoomHandlersReady={(handlers) => {
                     zoomHandlersRef.current = handlers;
                     setZoomPercentage(Math.round(((500 - handlers.getCurrentZoom()) / 450) * 100));
+                  }}
+                  onZoomChange={(distance) => {
+                    setZoomPercentage(Math.round(((500 - distance) / 450) * 100));
                   }}
                 />
               ) : niftiVolume ? (

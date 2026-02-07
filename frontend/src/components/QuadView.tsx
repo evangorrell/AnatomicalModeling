@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { NiftiVolume } from '../hooks/useNiftiVolume';
-import SliceViewer from './SliceViewer';
+import SliceViewer, { VIEWER_HEADER_HEIGHT } from './SliceViewer';
 import MeshViewer from './MeshViewer';
 import { MeshState } from '../types';
 import {
@@ -264,23 +264,49 @@ export default function QuadView({
     zoomIn: () => void;
     zoomOut: () => void;
     getCurrentZoom: () => number;
+    setZoomDistance: (distance: number) => void;
   } | null>(null);
   const [zoomPercentage, setZoomPercentage] = useState(50);
 
+  // Chrome-like zoom steps (3% to 110%)
+  const ZOOM_STEPS = [3, 10, 25, 33, 50, 67, 75, 80, 90, 100, 110];
+  const MIN_ZOOM = 3;
+  const MAX_ZOOM = 110;
+
+  // Convert percentage to camera distance: distance = 500 - (percentage / 100) * 450
+  const percentageToDistance = (pct: number) => 500 - (pct / 100) * 450;
+  // Convert distance to percentage: percentage = ((500 - distance) / 450) * 100
+  const distanceToPercentage = (dist: number) => Math.round(((500 - dist) / 450) * 100);
+
   const handleZoomIn = useCallback(() => {
     if (zoomHandlersRef.current) {
-      zoomHandlersRef.current.zoomIn();
-      const currentZoom = zoomHandlersRef.current.getCurrentZoom();
-      setZoomPercentage(Math.round(((500 - currentZoom) / 450) * 100));
+      // Find next zoom step up
+      const currentPct = zoomPercentage;
+      const nextStep = ZOOM_STEPS.find(step => step > currentPct) ?? MAX_ZOOM;
+      const clampedStep = Math.min(nextStep, MAX_ZOOM);
+      const newDistance = percentageToDistance(clampedStep);
+      zoomHandlersRef.current.setZoomDistance(newDistance);
+      setZoomPercentage(clampedStep);
     }
-  }, []);
+  }, [zoomPercentage]);
 
   const handleZoomOut = useCallback(() => {
     if (zoomHandlersRef.current) {
-      zoomHandlersRef.current.zoomOut();
-      const currentZoom = zoomHandlersRef.current.getCurrentZoom();
-      setZoomPercentage(Math.round(((500 - currentZoom) / 450) * 100));
+      // Find next zoom step down
+      const currentPct = zoomPercentage;
+      const prevStep = [...ZOOM_STEPS].reverse().find(step => step < currentPct) ?? MIN_ZOOM;
+      const clampedStep = Math.max(prevStep, MIN_ZOOM);
+      const newDistance = percentageToDistance(clampedStep);
+      zoomHandlersRef.current.setZoomDistance(newDistance);
+      setZoomPercentage(clampedStep);
     }
+  }, [zoomPercentage]);
+
+  // Clamp zoom percentage when it changes from scroll
+  const handleZoomChange = useCallback((distance: number) => {
+    const pct = distanceToPercentage(distance);
+    const clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pct));
+    setZoomPercentage(clamped);
   }, []);
 
   return (
@@ -318,38 +344,42 @@ export default function QuadView({
       <QuadCell position="topRight">
         <div style={{
           background: 'hsl(var(--card))',
-          borderTop: '3px solid hsl(var(--primary))',
           height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: 0,
-        overflow: 'hidden',
-      }}>
-        <div style={{
-          background: 'hsl(var(--primary))',
-          padding: '4px 12px',
-          fontSize: '12px',
-          fontWeight: '600',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '16px',
-          color: 'hsl(var(--primary-foreground))',
+          flexDirection: 'column',
+          minHeight: 0,
+          overflow: 'hidden',
+          borderTop: '3px solid hsl(var(--primary))',
         }}>
-          <span>3D View</span>
+          <div style={{
+            height: `${VIEWER_HEADER_HEIGHT}px`,
+            minHeight: `${VIEWER_HEADER_HEIGHT}px`,
+            background: 'hsl(var(--primary))',
+            padding: '0 8px',
+            fontSize: '12px',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+            color: 'hsl(var(--primary-foreground))',
+            whiteSpace: 'nowrap',
+            boxSizing: 'border-box',
+          }}>
+          <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>3D View</span>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flexShrink: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
               <button
                 onClick={handleZoomOut}
                 style={{
-                  width: '20px',
-                  height: '20px',
+                  width: '18px',
+                  height: '18px',
                   background: 'rgba(255, 255, 255, 0.2)',
                   border: 'none',
-                  borderRadius: '4px',
+                  borderRadius: '3px',
                   color: 'hsl(var(--primary-foreground))',
-                  fontSize: '14px',
+                  fontSize: '12px',
                   fontWeight: '600',
                   cursor: 'pointer',
                   display: 'flex',
@@ -366,13 +396,13 @@ export default function QuadView({
               <button
                 onClick={handleZoomIn}
                 style={{
-                  width: '20px',
-                  height: '20px',
+                  width: '18px',
+                  height: '18px',
                   background: 'rgba(255, 255, 255, 0.2)',
                   border: 'none',
-                  borderRadius: '4px',
+                  borderRadius: '3px',
                   color: 'hsl(var(--primary-foreground))',
-                  fontSize: '14px',
+                  fontSize: '12px',
                   fontWeight: '600',
                   cursor: 'pointer',
                   display: 'flex',
@@ -385,8 +415,8 @@ export default function QuadView({
               </button>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '11px', color: 'hsl(var(--primary-foreground) / 0.8)' }}>Brain</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0, flexShrink: 1 }}>
+              <span style={{ fontSize: '11px', color: 'hsl(var(--primary-foreground) / 0.8)', whiteSpace: 'nowrap' }}>Brain</span>
               <input
                 type="range"
                 min="0"
@@ -396,12 +426,12 @@ export default function QuadView({
                 onChange={(e) => onMeshStateChange({
                   brain: { ...meshState.brain, opacity: Number(e.target.value) }
                 })}
-                style={{ width: '60px', accentColor: '#b0b0b0', height: '4px' }}
+                style={{ width: '60px', minWidth: '30px', accentColor: '#b0b0b0', height: '4px', flexShrink: 1 }}
               />
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '11px', color: 'hsl(340 55% 52%)' }}>Tumor</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0, flexShrink: 1 }}>
+              <span style={{ fontSize: '11px', color: 'hsl(340 55% 52%)', whiteSpace: 'nowrap' }}>Tumor</span>
               <input
                 type="range"
                 min="0"
@@ -411,7 +441,7 @@ export default function QuadView({
                 onChange={(e) => onMeshStateChange({
                   tumor: { ...meshState.tumor, opacity: Number(e.target.value) }
                 })}
-                style={{ width: '60px', accentColor: 'hsl(340 55% 52%)', height: '4px' }}
+                style={{ width: '60px', minWidth: '30px', accentColor: 'hsl(340 55% 52%)', height: '4px', flexShrink: 1 }}
               />
             </div>
           </div>
@@ -424,11 +454,13 @@ export default function QuadView({
             onZoomHandlersReady={(handlers) => {
               zoomHandlersRef.current = handlers;
               const currentZoom = handlers.getCurrentZoom();
-              setZoomPercentage(Math.round(((500 - currentZoom) / 450) * 100));
+              const pct = distanceToPercentage(currentZoom);
+              setZoomPercentage(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pct)));
               if (onZoomHandlersReady) onZoomHandlersReady(handlers);
             }}
+            onZoomChange={handleZoomChange}
             crosshairPosition={normalizedCrosshair}
-            showCrosshairPlanes={true}
+            showCrosshairPlanes={showCrosshairs}
             volumeDims={dims}
             voxelSpacing={volume.pixDims}
           />

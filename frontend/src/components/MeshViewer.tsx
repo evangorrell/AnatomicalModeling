@@ -7,11 +7,18 @@ import { useMeshes } from '../hooks/useMeshes';
 import { MeshState } from '../types';
 import { verifyAssignmentByVolume } from '../utils/meshAnalysis';
 
+// Zoom limits: 3% to 110%
+// percentage = ((500 - distance) / 450) * 100
+// distance = 500 - (percentage / 100) * 450
+const MIN_ZOOM_DISTANCE = 500 - (110 / 100) * 450; // ~5 (110%)
+const MAX_ZOOM_DISTANCE = 500 - (3 / 100) * 450;   // ~486.5 (3%)
+
 interface MeshViewerProps {
   studyId: string | null; // For NIfTI-generated meshes
   stlFiles: { brain: string | null; tumor: string | null }; // For direct STL viewing
   meshState: MeshState;
-  onZoomHandlersReady?: (handlers: { zoomIn: () => void; zoomOut: () => void; getCurrentZoom: () => number }) => void;
+  onZoomHandlersReady?: (handlers: { zoomIn: () => void; zoomOut: () => void; getCurrentZoom: () => number; setZoomDistance: (distance: number) => void }) => void;
+  onZoomChange?: (zoomDistance: number) => void; // Called when zoom changes (scroll, etc.)
   // Crosshair planes for quad-view
   crosshairPosition?: { x: number; y: number; z: number }; // Normalized -1 to 1
   showCrosshairPlanes?: boolean;
@@ -104,7 +111,7 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
   );
 }
 
-function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, crosshairPosition, showCrosshairPlanes, volumeDims, voxelSpacing }: MeshViewerProps) {
+function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange, crosshairPosition, showCrosshairPlanes, volumeDims, voxelSpacing }: MeshViewerProps) {
   const { brain: niftiBrain, tumor: niftiTumor } = useMeshes(studyId);
   const cameraRef = useRef<THREE.PerspectiveCamera>(null);
   const controlsRef = useRef<any>(null);
@@ -243,42 +250,72 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, crosshairPos
     }
   }, [rawBrainGeometry, rawTumorGeometry]);
 
-  // Expose zoom handlers to parent component
+  // Store onZoomChange in a ref so we can use it in the controls setup
+  const onZoomChangeRef = useRef(onZoomChange);
+  onZoomChangeRef.current = onZoomChange;
+
+  // Expose zoom handlers to parent component and set up change listener
   useEffect(() => {
-    if (cameraRef.current && controlsRef.current && onZoomHandlersReady) {
+    if (cameraRef.current && controlsRef.current) {
       const camera = cameraRef.current;
       const controls = controlsRef.current;
 
-      const handlers = {
-        zoomIn: () => {
-          // Move camera closer along current view direction
-          const target = controls.target;
-          const direction = new THREE.Vector3().subVectors(camera.position, target);
-          const currentDistance = direction.length();
-          const newDistance = Math.max(10, currentDistance - 20); // Min distance 10 to prevent going through object
-
-          direction.normalize().multiplyScalar(newDistance);
-          camera.position.copy(target).add(direction);
-          controls.update();
-        },
-        zoomOut: () => {
-          // Move camera farther along current view direction
-          const target = controls.target;
-          const direction = new THREE.Vector3().subVectors(camera.position, target);
-          const currentDistance = direction.length();
-          const newDistance = currentDistance + 20; // No max limit
-
-          direction.normalize().multiplyScalar(newDistance);
-          camera.position.copy(target).add(direction);
-          controls.update();
-        },
-        getCurrentZoom: () => {
-          const target = controls.target;
-          return camera.position.distanceTo(target);
+      // Set up change listener for zoom updates
+      const handleChange = () => {
+        if (onZoomChangeRef.current) {
+          const distance = camera.position.distanceTo(controls.target);
+          onZoomChangeRef.current(distance);
         }
       };
+      
+      controls.addEventListener('change', handleChange);
 
-      onZoomHandlersReady(handlers);
+      if (onZoomHandlersReady) {
+        const handlers = {
+          zoomIn: () => {
+            // Move camera closer along current view direction
+            const target = controls.target;
+            const direction = new THREE.Vector3().subVectors(camera.position, target);
+            const currentDistance = direction.length();
+            const newDistance = Math.max(MIN_ZOOM_DISTANCE, currentDistance - 20);
+
+            direction.normalize().multiplyScalar(newDistance);
+            camera.position.copy(target).add(direction);
+            controls.update();
+          },
+          zoomOut: () => {
+            // Move camera farther along current view direction
+            const target = controls.target;
+            const direction = new THREE.Vector3().subVectors(camera.position, target);
+            const currentDistance = direction.length();
+            const newDistance = Math.min(MAX_ZOOM_DISTANCE, currentDistance + 20);
+
+            direction.normalize().multiplyScalar(newDistance);
+            camera.position.copy(target).add(direction);
+            controls.update();
+          },
+          getCurrentZoom: () => {
+            const target = controls.target;
+            return camera.position.distanceTo(target);
+          },
+          setZoomDistance: (distance: number) => {
+            // Set camera to specific distance (clamped)
+            const target = controls.target;
+            const direction = new THREE.Vector3().subVectors(camera.position, target);
+            const clampedDistance = Math.max(MIN_ZOOM_DISTANCE, Math.min(MAX_ZOOM_DISTANCE, distance));
+
+            direction.normalize().multiplyScalar(clampedDistance);
+            camera.position.copy(target).add(direction);
+            controls.update();
+          }
+        };
+
+        onZoomHandlersReady(handlers);
+      }
+
+      return () => {
+        controls.removeEventListener('change', handleChange);
+      };
     }
   }, [onZoomHandlersReady]);
 
@@ -306,12 +343,12 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, crosshairPos
       />
       <pointLight position={[0, 10, 0]} intensity={0.3} />
 
-      {/* Subtle grid floor */}
-      <gridHelper
-        args={[200, 20, '#3b8ebd', '#1e3a50']}
-        position={[0, -100, 0]}
-      />
-
+      {/* Subtle grid floor */}                                                                                                                                                                         
+      <gridHelper                                                                                                                                                                                       
+        args={[200, 20, '#3b8ebd', '#1e3a50']}                                                                                                                                                          
+        position={[0, -100, 0]}                                                                                                                                                                         
+      />                                                                                                                                                                                                
+  
       {/* Render brain mesh (from either STL or NIfTI) */}
       {(stlBrainGeometry || niftiBrain.geometry) && (
         <MeshObject
@@ -355,7 +392,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, crosshairPos
         />
       )}
 
-      {/* Orbit controls - no distance restrictions */}
+      {/* Orbit controls */}
       <OrbitControls
         ref={controlsRef}
         enableDamping
@@ -363,6 +400,10 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, crosshairPos
         rotateSpeed={0.5}
         zoomSpeed={0.8}
         panSpeed={0.5}
+        minPolarAngle={0}
+        maxPolarAngle={Math.PI}
+        minDistance={MIN_ZOOM_DISTANCE}
+        maxDistance={MAX_ZOOM_DISTANCE}
       />
     </>
   );
@@ -373,6 +414,7 @@ export default function MeshViewer({
   stlFiles,
   meshState,
   onZoomHandlersReady,
+  onZoomChange,
   crosshairPosition,
   showCrosshairPlanes,
   volumeDims,
@@ -392,6 +434,7 @@ export default function MeshViewer({
         stlFiles={stlFiles}
         meshState={meshState}
         onZoomHandlersReady={onZoomHandlersReady}
+        onZoomChange={onZoomChange}
         crosshairPosition={crosshairPosition}
         showCrosshairPlanes={showCrosshairPlanes}
         volumeDims={volumeDims}

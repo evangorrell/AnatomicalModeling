@@ -3,6 +3,9 @@ import { NiftiVolume, getSlice } from '../hooks/useNiftiVolume';
 import MeasurementOverlay from './MeasurementOverlay';
 import { Point2D, Measurement, MeasurementMode, PlaneType } from '../measurements/types';
 
+// Shared constant for viewer header height
+export const VIEWER_HEADER_HEIGHT = 28; // px
+
 interface SliceViewerProps {
   volume: NiftiVolume;
   plane: PlaneType;
@@ -49,6 +52,18 @@ export default function SliceViewer({
     pointKey: 'A' | 'B';
   } | null>(null);
 
+  // Track if mouse was pressed down on THIS canvas (to avoid capturing drags from other panels)
+  const isMouseDownHereRef = useRef(false);
+
+  // Global mouseup listener to reset state when mouse is released anywhere
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      isMouseDownHereRef.current = false;
+    };
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, []);
+
   const getMaxSlice = useCallback(() => {
     const [dimX, dimY, dimZ] = volume.dims;
     switch (plane) {
@@ -92,12 +107,16 @@ export default function SliceViewer({
     const pane = canvasContainerRef.current;
     if (!canvas || !crosshairCanvas || !pane) return;
 
+    const ctx = crosshairCanvas.getContext('2d');
+    if (!ctx) return;
+
     // Clear crosshairs if disabled
     if (!showCrosshairs) {
-      const ctx = crosshairCanvas.getContext('2d');
-      if (ctx) {
-        ctx.clearRect(0, 0, crosshairCanvas.width, crosshairCanvas.height);
-      }
+      const paneRect = pane.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      crosshairCanvas.width = paneRect.width * dpr;
+      crosshairCanvas.height = paneRect.height * dpr;
+      ctx.clearRect(0, 0, crosshairCanvas.width, crosshairCanvas.height);
       return;
     }
 
@@ -199,6 +218,9 @@ export default function SliceViewer({
   }, [measurements]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Mark that mouse was pressed on THIS canvas
+    isMouseDownHereRef.current = true;
+
     const imagePoint = screenToImage(e.clientX, e.clientY);
     if (!imagePoint) return;
 
@@ -236,7 +258,9 @@ export default function SliceViewer({
       return;
     }
 
-    if (e.buttons === 1 && measurementMode === 'off') {
+    // Only handle crosshair dragging if mouse was pressed down on THIS canvas
+    // This prevents capturing drags that started in other panels (like 3D view)
+    if (e.buttons === 1 && measurementMode === 'off' && isMouseDownHereRef.current) {
       const canvas = canvasRef.current;
       if (!canvas || !imagePoint) return;
       const dataY = canvas.height - 1 - imagePoint.y;
@@ -245,11 +269,14 @@ export default function SliceViewer({
   }, [measurementMode, draftPoints.length, screenToImage, dragging, onMeasurementPointDrag, onCrosshairChange]);
 
   const handleMouseUp = useCallback(() => {
+    isMouseDownHereRef.current = false;
     setDragging(null);
   }, []);
 
   const handleMouseLeave = useCallback(() => {
     setMousePosition(null);
+    // Don't reset isMouseDownHereRef here - only on mouseup
+    // This allows dragging to continue if user briefly leaves and re-enters
     setDragging(null);
   }, []);
 
@@ -276,25 +303,29 @@ export default function SliceViewer({
     >
       {/* Header bar */}
       <div style={{
+        height: `${VIEWER_HEADER_HEIGHT}px`,
+        minHeight: `${VIEWER_HEADER_HEIGHT}px`,
         background: color,
-        padding: '4px 8px',
+        padding: '0 8px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         fontSize: '12px',
-        fontWeight: '600',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+        boxSizing: 'border-box',
       }}>
-        <span>{label}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{label}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px', minWidth: 0, flex: 1 }}>
           <input
             type="range"
             min="0"
             max={maxSlice}
             value={sliceIndex}
             onChange={(e) => onSliceChange(parseInt(e.target.value))}
-            style={{ width: '100px', accentColor: '#fff' }}
+            style={{ flex: 1, minWidth: '50px', accentColor: '#fff' }}
           />
-          <span style={{ minWidth: '70px', textAlign: 'right' }}>
+          <span style={{ minWidth: '60px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '11px', flexShrink: 0 }}>
             {sliceIndex} / {maxSlice}
           </span>
         </div>
