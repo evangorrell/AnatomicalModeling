@@ -309,13 +309,14 @@ export default function SliceViewer({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          background: '#000',
           overflow: 'hidden',
           padding: '0',
           position: 'relative',
         }}
       >
         {/* Image wrapper with transform zoom */}
-        <div style={{ position: 'relative', transform: 'scale(2.0)' }}>
+        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
           <canvas
             ref={canvasRef}
             onMouseDown={handleMouseDown}
@@ -323,11 +324,12 @@ export default function SliceViewer({
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
             style={{
-              maxWidth: '100%',
-              maxHeight: '100%',
+              width: '100%',
+              height: '100%',
               objectFit: 'contain',
               cursor: dragging ? 'grabbing' : (measurementMode !== 'off' ? 'crosshair' : 'crosshair'),
               imageRendering: 'pixelated',
+              background: '#000',
             }}
           />
           {/* Measurement overlay */}
@@ -355,17 +357,6 @@ export default function SliceViewer({
             zIndex: 10,
           }}
         />
-      </div>
-
-      {/* Dimension info */}
-      <div style={{
-        position: 'absolute',
-        bottom: '4px',
-        left: '8px',
-        fontSize: '10px',
-        color: 'hsl(var(--muted-foreground))',
-      }}>
-        {sliceDims.width} x {sliceDims.height}
       </div>
     </div>
   );
