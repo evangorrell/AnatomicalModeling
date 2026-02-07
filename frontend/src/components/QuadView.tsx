@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { NiftiVolume } from '../hooks/useNiftiVolume';
 import SliceViewer from './SliceViewer';
 import MeshViewer from './MeshViewer';
@@ -15,6 +15,36 @@ import {
   calculateDistanceMm,
   generateMeasurementId,
 } from '../measurements/math';
+
+// Divider style for the "+" center divider
+const DIVIDER = '2px solid white';
+
+// Helper component to wrap each quadrant with conditional inner borders
+interface QuadCellProps {
+  position: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
+  children: ReactNode;
+}
+
+function QuadCell({ position, children }: QuadCellProps) {
+  const borderStyles: React.CSSProperties = {
+    minHeight: 0,
+    minWidth: 0,
+    overflow: 'hidden',
+  };
+
+  // Add inner borders based on position to create "+" divider
+  if (position === 'topLeft') {
+    borderStyles.borderRight = DIVIDER;
+    borderStyles.borderBottom = DIVIDER;
+  } else if (position === 'topRight') {
+    borderStyles.borderBottom = DIVIDER;
+  } else if (position === 'bottomLeft') {
+    borderStyles.borderRight = DIVIDER;
+  }
+  // bottomRight has no borders
+
+  return <div style={borderStyles}>{children}</div>;
+}
 
 interface CrosshairPosition {
   x: number;
@@ -258,13 +288,14 @@ export default function QuadView({
       display: 'grid',
       gridTemplateColumns: '1fr 1fr',
       gridTemplateRows: '1fr 1fr',
-      gap: '4px',
+      gap: 0,
       height: '100%',
       overflow: 'hidden',
       background: 'hsl(var(--background))',
     }}>
       {/* Top Left: Axial (Red) */}
-      <SliceViewer
+      <QuadCell position="topLeft">
+        <SliceViewer
         volume={volume}
         plane="axial"
         sliceIndex={crosshair.z}
@@ -279,13 +310,16 @@ export default function QuadView({
         draftPoints={measurementState.draftByPanel.axial}
         onMeasurementClick={(p) => handleMeasurementClick('axial', p)}
         onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('axial', id, key, pt)}
-        showCrosshairs={showCrosshairs}
-      />
+          showCrosshairs={showCrosshairs}
+        />
+      </QuadCell>
 
       {/* Top Right: 3D View (Blue) */}
-      <div style={{
-        background: 'hsl(var(--card))',
-        borderTop: '3px solid hsl(var(--primary))',
+      <QuadCell position="topRight">
+        <div style={{
+          background: 'hsl(var(--card))',
+          borderTop: '3px solid hsl(var(--primary))',
+          height: '100%',
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
@@ -399,45 +433,50 @@ export default function QuadView({
             voxelSpacing={volume.pixDims}
           />
         </div>
-      </div>
+        </div>
+      </QuadCell>
 
       {/* Bottom Left: Coronal (Green) */}
-      <SliceViewer
-        volume={volume}
-        plane="coronal"
-        sliceIndex={crosshair.y}
-        crosshairX={crosshair.x}
-        crosshairY={crosshair.z}
-        onSliceChange={handleCoronalSliceChange}
-        onCrosshairChange={handleCoronalCrosshairChange}
-        color="#2ecc71"
-        label="Coronal"
-        measurementMode={measurementMode}
-        measurements={measurementState.measurementsByPanel.coronal}
-        draftPoints={measurementState.draftByPanel.coronal}
-        onMeasurementClick={(p) => handleMeasurementClick('coronal', p)}
-        onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('coronal', id, key, pt)}
-        showCrosshairs={showCrosshairs}
-      />
+      <QuadCell position="bottomLeft">
+        <SliceViewer
+          volume={volume}
+          plane="coronal"
+          sliceIndex={crosshair.y}
+          crosshairX={crosshair.x}
+          crosshairY={crosshair.z}
+          onSliceChange={handleCoronalSliceChange}
+          onCrosshairChange={handleCoronalCrosshairChange}
+          color="#2ecc71"
+          label="Coronal"
+          measurementMode={measurementMode}
+          measurements={measurementState.measurementsByPanel.coronal}
+          draftPoints={measurementState.draftByPanel.coronal}
+          onMeasurementClick={(p) => handleMeasurementClick('coronal', p)}
+          onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('coronal', id, key, pt)}
+          showCrosshairs={showCrosshairs}
+        />
+      </QuadCell>
 
       {/* Bottom Right: Sagittal (Yellow) */}
-      <SliceViewer
-        volume={volume}
-        plane="sagittal"
-        sliceIndex={crosshair.x}
-        crosshairX={crosshair.y}
-        crosshairY={crosshair.z}
-        onSliceChange={handleSagittalSliceChange}
-        onCrosshairChange={handleSagittalCrosshairChange}
-        color="#f1c40f"
-        label="Sagittal"
-        measurementMode={measurementMode}
-        measurements={measurementState.measurementsByPanel.sagittal}
-        draftPoints={measurementState.draftByPanel.sagittal}
-        onMeasurementClick={(p) => handleMeasurementClick('sagittal', p)}
-        onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('sagittal', id, key, pt)}
-        showCrosshairs={showCrosshairs}
-      />
+      <QuadCell position="bottomRight">
+        <SliceViewer
+          volume={volume}
+          plane="sagittal"
+          sliceIndex={crosshair.x}
+          crosshairX={crosshair.y}
+          crosshairY={crosshair.z}
+          onSliceChange={handleSagittalSliceChange}
+          onCrosshairChange={handleSagittalCrosshairChange}
+          color="#f1c40f"
+          label="Sagittal"
+          measurementMode={measurementMode}
+          measurements={measurementState.measurementsByPanel.sagittal}
+          draftPoints={measurementState.draftByPanel.sagittal}
+          onMeasurementClick={(p) => handleMeasurementClick('sagittal', p)}
+          onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('sagittal', id, key, pt)}
+          showCrosshairs={showCrosshairs}
+        />
+      </QuadCell>
     </div>
   );
 }
