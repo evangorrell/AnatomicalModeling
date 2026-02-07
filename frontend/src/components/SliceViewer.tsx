@@ -18,6 +18,7 @@ interface SliceViewerProps {
   draftPoints?: Point2D[];
   onMeasurementClick?: (point: Point2D) => void;
   onMeasurementPointDrag?: (measurementId: string, pointKey: 'A' | 'B', newPoint: Point2D) => void;
+  showCrosshairs?: boolean;
 }
 
 export default function SliceViewer({
@@ -35,6 +36,7 @@ export default function SliceViewer({
   draftPoints = [],
   onMeasurementClick,
   onMeasurementPointDrag,
+  showCrosshairs = true,
 }: SliceViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const crosshairCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -89,6 +91,15 @@ export default function SliceViewer({
     const crosshairCanvas = crosshairCanvasRef.current;
     const pane = canvasContainerRef.current;
     if (!canvas || !crosshairCanvas || !pane) return;
+
+    // Clear crosshairs if disabled
+    if (!showCrosshairs) {
+      const ctx = crosshairCanvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, crosshairCanvas.width, crosshairCanvas.height);
+      }
+      return;
+    }
 
     const drawCrosshairs = () => {
       const paneRect = pane.getBoundingClientRect();
@@ -152,7 +163,7 @@ export default function SliceViewer({
     return () => {
       resizeObserver.disconnect();
     };
-  }, [crosshairX, crosshairY, volume, plane, sliceIndex]);
+  }, [crosshairX, crosshairY, volume, plane, sliceIndex, showCrosshairs]);
 
   const screenToImage = useCallback((clientX: number, clientY: number): Point2D | null => {
     const canvas = canvasRef.current;
@@ -258,7 +269,7 @@ export default function SliceViewer({
         height: '100%',
         minHeight: 0,
         overflow: 'hidden',
-        background: '#000',
+        background: 'hsl(var(--background))',
         borderTop: `3px solid ${color}`,
         position: 'relative',
       }}
@@ -352,7 +363,7 @@ export default function SliceViewer({
         bottom: '4px',
         left: '8px',
         fontSize: '10px',
-        color: 'rgba(255, 255, 255, 0.5)',
+        color: 'hsl(var(--muted-foreground))',
       }}>
         {sliceDims.width} x {sliceDims.height}
       </div>

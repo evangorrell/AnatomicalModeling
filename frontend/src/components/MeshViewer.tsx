@@ -308,7 +308,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, crosshairPos
 
       {/* Subtle grid floor */}
       <gridHelper
-        args={[200, 20, '#4a6fa5', '#2d4a6e']}
+        args={[200, 20, '#3b8ebd', '#1e3a50']}
         position={[0, -100, 0]}
       />
 
@@ -336,7 +336,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, crosshairPos
       {(niftiBrain.loading || niftiTumor.loading) && (
         <mesh position={[0, 0, 0]}>
           <sphereGeometry args={[5, 32, 32]} />
-          <meshStandardMaterial color="#ff6b4a" wireframe />
+          <meshStandardMaterial color="#3b8ebd" wireframe />
         </mesh>
       )}
 
@@ -383,7 +383,7 @@ export default function MeshViewer({
       style={{
         width: '100%',
         height: '100%',
-        background: 'linear-gradient(135deg, #0f1e2e 0%, #1a2f45 100%)'
+        background: 'hsl(222 28% 7%)'
       }}
       shadows
     >

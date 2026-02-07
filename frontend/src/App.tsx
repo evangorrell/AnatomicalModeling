@@ -65,6 +65,7 @@ export default function App() {
   const [measurementMode, setMeasurementMode] = useState<MeasurementMode>('off');
   const [measurementClearKey, setMeasurementClearKey] = useState(0);
   const [undoKey, setUndoKey] = useState(0);
+  const [showCrosshairs, setShowCrosshairs] = useState(true);
 
   // Keyboard listener for Cmd+Z undo
   useEffect(() => {
@@ -386,8 +387,8 @@ export default function App() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #0B1B3D 0%, #1e3a5f 50%, #4a6fa5 100%)',
-      color: 'white',
+      background: 'hsl(var(--background))',
+      color: 'hsl(var(--foreground))',
     }}>
       {/* Navigation */}
       <nav style={{
@@ -412,11 +413,11 @@ export default function App() {
               resetViewer();
               document.getElementById('main')?.scrollIntoView({ behavior: 'smooth' });
             }}
-            style={{ color: 'rgba(255, 255, 255, 0.8)', textDecoration: 'none', fontSize: '15px', cursor: 'pointer' }}
+            style={{ color: 'hsl(var(--secondary-foreground))', textDecoration: 'none', fontSize: '15px', cursor: 'pointer' }}
           >
             Upload
           </a>
-          <a href="#contact" style={{ color: 'rgba(255, 255, 255, 0.8)', textDecoration: 'none', fontSize: '15px' }}>
+          <a href="#contact" style={{ color: 'hsl(var(--secondary-foreground))', textDecoration: 'none', fontSize: '15px' }}>
             Contact
           </a>
         </div>
@@ -438,7 +439,7 @@ export default function App() {
             {/* Hero Content */}
             <div style={{ marginBottom: '60px', textAlign: 'center', maxWidth: '800px' }}>
               <div style={{
-                color: '#ff6b4a',
+                color: 'hsl(var(--primary))',
                 fontSize: '14px',
                 fontWeight: '600',
                 letterSpacing: '2px',
@@ -467,7 +468,7 @@ export default function App() {
 
             {/* Upload Box */}
             <div style={{
-              background: 'rgba(255, 255, 255, 0.05)',
+              background: 'hsl(var(--card))',
               backdropFilter: 'blur(10px)',
               borderRadius: '16px',
               padding: '40px',
@@ -485,10 +486,10 @@ export default function App() {
                 }}>
                   <CircularProgress progress={progress} size={140} strokeWidth={10} />
                   <div style={{ textAlign: 'center' }}>
-                    <p style={{ fontSize: '18px', fontWeight: '500', color: '#ff6b4a', marginBottom: '8px' }}>
+                    <p style={{ fontSize: '18px', fontWeight: '500', color: 'hsl(var(--primary))', marginBottom: '8px' }}>
                       {progressMessage}
                     </p>
-                    <p style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.6)' }}>
+                    <p style={{ fontSize: '14px', color: 'hsl(var(--muted-foreground))' }}>
                       This may take a few minutes...
                     </p>
                   </div>
@@ -497,9 +498,9 @@ export default function App() {
                 <>
                   {error && (
                     <div style={{
-                      background: 'rgba(255, 107, 74, 0.2)',
-                      border: '1px solid #ff6b4a',
-                      color: '#ff6b4a',
+                      background: 'hsl(var(--destructive) / 0.2)',
+                      border: '1px solid hsl(var(--destructive))',
+                      color: 'hsl(var(--destructive))',
                       padding: '16px 24px',
                       borderRadius: '8px',
                       marginBottom: '24px',
@@ -518,35 +519,35 @@ export default function App() {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          background: 'rgba(74, 222, 128, 0.15)',
-                          border: '1px solid rgba(74, 222, 128, 0.4)',
+                          background: 'hsl(var(--secondary))',
+                          border: '1px solid hsl(var(--border))',
                           borderRadius: '12px',
                           padding: '12px 16px',
                           marginBottom: '8px',
                         }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '10px', color: '#4ade80', fontWeight: '600', letterSpacing: '0.5px' }}>
+                            <div style={{ fontSize: '10px', color: 'hsl(var(--chart-2))', fontWeight: '600', letterSpacing: '0.5px' }}>
                               NIFTI
                             </div>
                             <div style={{
                               fontSize: '14px',
-                              color: 'rgba(255, 255, 255, 0.9)',
+                              color: 'hsl(var(--foreground))',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
                             }}>
                               {file.name}
                             </div>
-                            <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>
+                            <div style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))' }}>
                               {(file.size / 1024 / 1024).toFixed(2)} MB
                             </div>
                           </div>
                           <button
                             onClick={() => removeFile('nifti', i)}
                             style={{
-                              background: 'rgba(255, 255, 255, 0.1)',
+                              background: 'hsl(var(--muted))',
                               border: 'none',
-                              color: 'rgba(255, 255, 255, 0.6)',
+                              color: 'hsl(var(--muted-foreground))',
                               fontSize: '16px',
                               cursor: 'pointer',
                               padding: '4px 10px',
@@ -564,35 +565,35 @@ export default function App() {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          background: 'rgba(59, 130, 246, 0.15)',
-                          border: '1px solid rgba(59, 130, 246, 0.4)',
+                          background: 'hsl(var(--secondary))',
+                          border: '1px solid hsl(var(--border))',
                           borderRadius: '12px',
                           padding: '12px 16px',
                           marginBottom: '8px',
                         }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '10px', color: '#3b82f6', fontWeight: '600', letterSpacing: '0.5px' }}>
+                            <div style={{ fontSize: '10px', color: 'hsl(var(--primary))', fontWeight: '600', letterSpacing: '0.5px' }}>
                               STL MESH
                             </div>
                             <div style={{
                               fontSize: '14px',
-                              color: 'rgba(255, 255, 255, 0.9)',
+                              color: 'hsl(var(--foreground))',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
                             }}>
                               {file.name}
                             </div>
-                            <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>
+                            <div style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))' }}>
                               {(file.size / 1024).toFixed(0)} KB
                             </div>
                           </div>
                           <button
                             onClick={() => removeFile('stl', i)}
                             style={{
-                              background: 'rgba(255, 255, 255, 0.1)',
+                              background: 'hsl(var(--muted))',
                               border: 'none',
-                              color: 'rgba(255, 255, 255, 0.6)',
+                              color: 'hsl(var(--muted-foreground))',
                               fontSize: '16px',
                               cursor: 'pointer',
                               padding: '4px 10px',
@@ -606,7 +607,7 @@ export default function App() {
 
                       {/* Info text */}
                       {hasNifti && !hasStl && (
-                        <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.5)', textAlign: 'center', marginTop: '8px' }}>
+                        <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', textAlign: 'center', marginTop: '8px' }}>
                           Larger file → MRI image, smaller file → tumor labels (auto-detected)
                         </div>
                       )}
@@ -622,7 +623,7 @@ export default function App() {
                     onClick={() => document.getElementById('file-input')?.click()}
                     style={{
                       minHeight: totalFiles > 0 ? '120px' : '200px',
-                      border: `2px dashed ${dragActive ? '#ff6b4a' : 'rgba(255, 255, 255, 0.3)'}`,
+                      border: `2px dashed ${dragActive ? 'hsl(var(--primary))' : 'hsl(var(--border))'}`,
                       borderRadius: '12px',
                       display: 'flex',
                       flexDirection: 'column',
@@ -630,11 +631,11 @@ export default function App() {
                       justifyContent: 'center',
                       cursor: 'pointer',
                       transition: 'all 0.3s',
-                      background: dragActive ? 'rgba(255, 107, 74, 0.1)' : 'transparent',
+                      background: dragActive ? 'hsl(var(--primary) / 0.1)' : 'transparent',
                       marginBottom: '24px',
                     }}
                   >
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(255, 255, 255, 0.5)" strokeWidth="2">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth="2">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                       <polyline points="17 8 12 3 7 8" />
                       <line x1="12" y1="3" x2="12" y2="15" />
@@ -642,7 +643,7 @@ export default function App() {
                     <p style={{ fontSize: '16px', fontWeight: '500', margin: '16px 0 8px 0' }}>
                       Drop .nii.gz or .stl files here
                     </p>
-                    <p style={{ fontSize: '13px', opacity: 0.6 }}>
+                    <p style={{ fontSize: '13px', color: 'hsl(var(--muted-foreground))' }}>
                       or click to browse
                     </p>
                   </div>
@@ -654,8 +655,8 @@ export default function App() {
                         onClick={handleGenerateMesh}
                         style={{
                           padding: '14px 32px',
-                          background: '#ff6b4a',
-                          color: 'white',
+                          background: 'hsl(var(--primary))',
+                          color: 'hsl(var(--primary-foreground))',
                           border: 'none',
                           borderRadius: '10px',
                           fontSize: '16px',
@@ -671,8 +672,8 @@ export default function App() {
                         onClick={handleViewStlOnly}
                         style={{
                           padding: '14px 32px',
-                          background: '#3b82f6',
-                          color: 'white',
+                          background: 'hsl(var(--primary))',
+                          color: 'hsl(var(--primary-foreground))',
                           border: 'none',
                           borderRadius: '10px',
                           fontSize: '16px',
@@ -688,8 +689,8 @@ export default function App() {
                         onClick={handleViewHybrid}
                         style={{
                           padding: '14px 32px',
-                          background: 'linear-gradient(135deg, #4ade80, #3b82f6)',
-                          color: 'white',
+                          background: 'hsl(var(--primary))',
+                          color: 'hsl(var(--primary-foreground))',
                           border: 'none',
                           borderRadius: '10px',
                           fontSize: '16px',
@@ -750,11 +751,30 @@ export default function App() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
-                    background: 'rgba(255, 255, 255, 0.1)',
+                    background: 'hsl(var(--secondary))',
                     borderRadius: '8px',
                     padding: '4px',
                   }}>
-                    <span style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', padding: '0 8px' }}>
+                    <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', padding: '0 8px' }}>
+                      Crosshairs:
+                    </span>
+                    <button
+                      onClick={() => setShowCrosshairs(!showCrosshairs)}
+                      style={{
+                        padding: '6px 12px',
+                        background: showCrosshairs ? 'hsl(var(--primary))' : 'transparent',
+                        border: 'none',
+                        borderRadius: '6px',
+                        color: showCrosshairs ? 'hsl(var(--primary-foreground))' : 'hsl(var(--muted-foreground))',
+                        fontSize: '12px',
+                        fontWeight: showCrosshairs ? '600' : '400',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {showCrosshairs ? 'On' : 'Off'}
+                    </button>
+                    <div style={{ width: '1px', height: '20px', background: 'hsl(var(--border))', margin: '0 4px' }} />
+                    <span style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', padding: '0 8px' }}>
                       Measure:
                     </span>
                     {(['off', 'distance'] as const).map((mode) => (
@@ -763,28 +783,27 @@ export default function App() {
                         onClick={() => setMeasurementMode(mode)}
                         style={{
                           padding: '6px 12px',
-                          background: measurementMode === mode ? '#ff6b4a' : 'transparent',
+                          background: measurementMode === mode ? 'hsl(var(--primary))' : 'transparent',
                           border: 'none',
                           borderRadius: '6px',
-                          color: measurementMode === mode ? 'white' : 'rgba(255, 255, 255, 0.7)',
+                          color: measurementMode === mode ? 'hsl(var(--primary-foreground))' : 'hsl(var(--muted-foreground))',
                           fontSize: '12px',
                           fontWeight: measurementMode === mode ? '600' : '400',
                           cursor: 'pointer',
-                          textTransform: 'capitalize',
                         }}
                       >
-                        {mode}
+                        {mode === 'distance' ? 'On' : 'Off'}
                       </button>
                     ))}
-                    <div style={{ width: '1px', height: '20px', background: 'rgba(255, 255, 255, 0.3)', margin: '0 4px' }} />
+                    <div style={{ width: '1px', height: '20px', background: 'hsl(var(--border))', margin: '0 4px' }} />
                     <button
                       onClick={() => setMeasurementClearKey(k => k + 1)}
                       style={{
                         padding: '6px 12px',
                         background: 'transparent',
-                        border: '1px solid rgba(255, 255, 255, 0.3)',
+                        border: '1px solid hsl(var(--border))',
                         borderRadius: '6px',
-                        color: 'rgba(255, 255, 255, 0.7)',
+                        color: 'hsl(var(--muted-foreground))',
                         fontSize: '12px',
                         cursor: 'pointer',
                       }}
@@ -800,8 +819,8 @@ export default function App() {
                       onClick={handleDownload}
                       disabled={downloading}
                       style={{
-                        background: '#ff6b4a',
-                        color: 'white',
+                        background: 'hsl(var(--primary))',
+                        color: 'hsl(var(--primary-foreground))',
                         border: 'none',
                         padding: '12px 24px',
                         borderRadius: '8px',
@@ -818,10 +837,10 @@ export default function App() {
                     onClick={resetViewer}
                     style={{
                       padding: '12px 24px',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '1px solid rgba(255, 255, 255, 0.3)',
+                      background: 'hsl(var(--secondary))',
+                      border: '1px solid hsl(var(--border))',
                       borderRadius: '8px',
-                      color: 'white',
+                      color: 'hsl(var(--foreground))',
                       fontSize: '14px',
                       fontWeight: '500',
                       cursor: 'pointer',
@@ -835,7 +854,7 @@ export default function App() {
             {/* Controls for 3D-only mode */}
             {viewerType === '3d-only' && (
               <div style={{
-                background: 'rgba(255, 255, 255, 0.1)',
+                background: 'hsl(var(--card))',
                 backdropFilter: 'blur(10px)',
                 borderRadius: '12px',
                 padding: '20px',
@@ -858,10 +877,10 @@ export default function App() {
                     style={{
                       width: '32px',
                       height: '32px',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '1px solid rgba(255, 255, 255, 0.3)',
+                      background: 'hsl(var(--secondary))',
+                      border: '1px solid hsl(var(--border))',
                       borderRadius: '6px',
-                      color: 'white',
+                      color: 'hsl(var(--foreground))',
                       fontSize: '18px',
                       fontWeight: '600',
                       cursor: 'pointer',
@@ -883,10 +902,10 @@ export default function App() {
                     style={{
                       width: '32px',
                       height: '32px',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      border: '1px solid rgba(255, 255, 255, 0.3)',
+                      background: 'hsl(var(--secondary))',
+                      border: '1px solid hsl(var(--border))',
                       borderRadius: '6px',
-                      color: 'white',
+                      color: 'hsl(var(--foreground))',
                       fontSize: '18px',
                       fontWeight: '600',
                       cursor: 'pointer',
@@ -906,7 +925,7 @@ export default function App() {
                       step="0.1"
                       value={meshState.brain.opacity}
                       onChange={(e) => updateBrainState({ opacity: Number(e.target.value) })}
-                      style={{ width: '100px', accentColor: '#b0b0b0' }}
+                      style={{ width: '100px', accentColor: 'hsl(var(--muted-foreground))' }}
                     />
                   </div>
                 )}
@@ -921,7 +940,7 @@ export default function App() {
                       step="0.1"
                       value={meshState.tumor.opacity}
                       onChange={(e) => updateTumorState({ opacity: Number(e.target.value) })}
-                      style={{ width: '100px', accentColor: '#ff6b4a' }}
+                      style={{ width: '100px', accentColor: 'hsl(var(--chart-3))' }}
                     />
                   </div>
                 )}
@@ -934,7 +953,7 @@ export default function App() {
                 minHeight: 0,
                 borderRadius: '12px',
                 overflow: 'hidden',
-                background: 'rgba(0, 0, 0, 0.2)',
+                background: 'hsl(var(--card))',
               }}>
               {viewerType === '3d-only' ? (
                 <MeshViewer
@@ -960,6 +979,7 @@ export default function App() {
                   measurementMode={measurementMode}
                   measurementClearKey={measurementClearKey}
                   undoKey={undoKey}
+                  showCrosshairs={showCrosshairs}
                 />
               ) : niftiLoading ? (
                 <div style={{
@@ -967,7 +987,7 @@ export default function App() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: 'rgba(255, 255, 255, 0.6)',
+                  color: 'hsl(var(--muted-foreground))',
                 }}>
                   Loading volume data...
                 </div>
@@ -1000,7 +1020,7 @@ export default function App() {
           </h2>
           <p style={{
             fontSize: '16px',
-            opacity: 0.8,
+            color: 'hsl(var(--muted-foreground))',
             textAlign: 'center',
             marginBottom: '48px',
           }}>
@@ -1008,7 +1028,7 @@ export default function App() {
           </p>
 
           <form onSubmit={handleContactSubmit} style={{
-            background: 'rgba(26, 49, 86, 0.6)',
+            background: 'hsl(var(--card))',
             backdropFilter: 'blur(10px)',
             borderRadius: '16px',
             padding: '40px',
@@ -1027,9 +1047,9 @@ export default function App() {
                   width: '100%',
                   padding: '14px 16px',
                   borderRadius: '8px',
-                  background: '#0F2447',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  color: 'white',
+                  background: 'hsl(var(--input))',
+                  border: '1px solid hsl(var(--border))',
+                  color: 'hsl(var(--foreground))',
                   fontSize: '15px',
                 }}
               />
@@ -1049,9 +1069,9 @@ export default function App() {
                   width: '100%',
                   padding: '14px 16px',
                   borderRadius: '8px',
-                  background: '#0F2447',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  color: 'white',
+                  background: 'hsl(var(--input))',
+                  border: '1px solid hsl(var(--border))',
+                  color: 'hsl(var(--foreground))',
                   fontSize: '15px',
                 }}
               />
@@ -1071,9 +1091,9 @@ export default function App() {
                   width: '100%',
                   padding: '14px 16px',
                   borderRadius: '8px',
-                  background: '#0F2447',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  color: 'white',
+                  background: 'hsl(var(--input))',
+                  border: '1px solid hsl(var(--border))',
+                  color: 'hsl(var(--foreground))',
                   fontSize: '15px',
                   resize: 'vertical',
                 }}
@@ -1088,8 +1108,8 @@ export default function App() {
                   borderRadius: '999px',
                   fontSize: '16px',
                   fontWeight: '600',
-                  background: '#ff6b4a',
-                  color: 'white',
+                  background: 'hsl(var(--primary))',
+                  color: 'hsl(var(--primary-foreground))',
                   border: 'none',
                   cursor: 'pointer',
                   display: 'inline-flex',

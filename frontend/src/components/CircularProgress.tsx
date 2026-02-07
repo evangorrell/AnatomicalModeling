@@ -9,7 +9,7 @@ export default function CircularProgress({
   progress,
   size = 120,
   strokeWidth = 8,
-  color = '#ff6b4a'
+  color = 'hsl(var(--primary))'
 }: CircularProgressProps) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -24,7 +24,7 @@ export default function CircularProgress({
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke="rgba(255, 255, 255, 0.1)"
+          stroke="hsl(var(--border))"
           strokeWidth={strokeWidth}
         />
         {/* Progress circle */}

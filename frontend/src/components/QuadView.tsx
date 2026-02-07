@@ -32,6 +32,7 @@ interface QuadViewProps {
   measurementMode?: MeasurementMode;
   measurementClearKey?: number;
   undoKey?: number;
+  showCrosshairs?: boolean;
 }
 
 export default function QuadView({
@@ -44,6 +45,7 @@ export default function QuadView({
   measurementMode = 'off',
   measurementClearKey = 0,
   undoKey = 0,
+  showCrosshairs = true,
 }: QuadViewProps) {
   const [dims] = useState(() => volume.dims);
 
@@ -259,7 +261,7 @@ export default function QuadView({
       gap: '4px',
       height: '100%',
       overflow: 'hidden',
-      background: '#1a1a1a',
+      background: 'hsl(var(--background))',
     }}>
       {/* Top Left: Axial (Red) */}
       <SliceViewer
@@ -277,19 +279,20 @@ export default function QuadView({
         draftPoints={measurementState.draftByPanel.axial}
         onMeasurementClick={(p) => handleMeasurementClick('axial', p)}
         onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('axial', id, key, pt)}
+        showCrosshairs={showCrosshairs}
       />
 
       {/* Top Right: 3D View (Blue) */}
       <div style={{
-        background: '#000',
-        borderTop: '3px solid #3498db',
+        background: 'hsl(var(--card))',
+        borderTop: '3px solid hsl(var(--primary))',
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
         overflow: 'hidden',
       }}>
         <div style={{
-          background: '#3498db',
+          background: 'hsl(var(--primary))',
           padding: '4px 12px',
           fontSize: '12px',
           fontWeight: '600',
@@ -297,6 +300,7 @@ export default function QuadView({
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: '16px',
+          color: 'hsl(var(--primary-foreground))',
         }}>
           <span>3D View</span>
 
@@ -310,7 +314,7 @@ export default function QuadView({
                   background: 'rgba(255, 255, 255, 0.2)',
                   border: 'none',
                   borderRadius: '4px',
-                  color: 'white',
+                  color: 'hsl(var(--primary-foreground))',
                   fontSize: '14px',
                   fontWeight: '600',
                   cursor: 'pointer',
@@ -333,7 +337,7 @@ export default function QuadView({
                   background: 'rgba(255, 255, 255, 0.2)',
                   border: 'none',
                   borderRadius: '4px',
-                  color: 'white',
+                  color: 'hsl(var(--primary-foreground))',
                   fontSize: '14px',
                   fontWeight: '600',
                   cursor: 'pointer',
@@ -348,7 +352,7 @@ export default function QuadView({
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '11px', color: '#b0b0b0' }}>Brain</span>
+              <span style={{ fontSize: '11px', color: 'hsl(var(--primary-foreground) / 0.8)' }}>Brain</span>
               <input
                 type="range"
                 min="0"
@@ -363,7 +367,7 @@ export default function QuadView({
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '11px', color: '#ff6b4a' }}>Tumor</span>
+              <span style={{ fontSize: '11px', color: 'hsl(340 55% 52%)' }}>Tumor</span>
               <input
                 type="range"
                 min="0"
@@ -373,7 +377,7 @@ export default function QuadView({
                 onChange={(e) => onMeshStateChange({
                   tumor: { ...meshState.tumor, opacity: Number(e.target.value) }
                 })}
-                style={{ width: '60px', accentColor: '#ff6b4a', height: '4px' }}
+                style={{ width: '60px', accentColor: 'hsl(340 55% 52%)', height: '4px' }}
               />
             </div>
           </div>
@@ -413,6 +417,7 @@ export default function QuadView({
         draftPoints={measurementState.draftByPanel.coronal}
         onMeasurementClick={(p) => handleMeasurementClick('coronal', p)}
         onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('coronal', id, key, pt)}
+        showCrosshairs={showCrosshairs}
       />
 
       {/* Bottom Right: Sagittal (Yellow) */}
@@ -431,6 +436,7 @@ export default function QuadView({
         draftPoints={measurementState.draftByPanel.sagittal}
         onMeasurementClick={(p) => handleMeasurementClick('sagittal', p)}
         onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('sagittal', id, key, pt)}
+        showCrosshairs={showCrosshairs}
       />
     </div>
   );
