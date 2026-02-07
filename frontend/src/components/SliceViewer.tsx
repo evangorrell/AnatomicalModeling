@@ -37,19 +37,16 @@ export default function SliceViewer({
   onMeasurementPointDrag,
 }: SliceViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const crosshairCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
 
-  // Mouse position for preview line (in image coordinates)
   const [mousePosition, setMousePosition] = useState<Point2D | null>(null);
-
-  // Dragging state
   const [dragging, setDragging] = useState<{
     measurementId: string;
     pointKey: 'A' | 'B';
   } | null>(null);
 
-  // Get max slice index for this plane
   const getMaxSlice = useCallback(() => {
     const [dimX, dimY, dimZ] = volume.dims;
     switch (plane) {
@@ -59,7 +56,6 @@ export default function SliceViewer({
     }
   }, [volume.dims, plane]);
 
-  // Get slice dimensions
   const getSliceDims = useCallback(() => {
     const [dimX, dimY, dimZ] = volume.dims;
     switch (plane) {
@@ -69,7 +65,7 @@ export default function SliceViewer({
     }
   }, [volume.dims, plane]);
 
-  // Render slice to canvas
+  // Render slice to canvas (image only, no crosshairs)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !volume) return;
@@ -85,28 +81,79 @@ export default function SliceViewer({
     const imageData = ctx.createImageData(width, height);
     imageData.data.set(data);
     ctx.putImageData(imageData, 0, 0);
+  }, [volume, plane, sliceIndex]);
 
-    // Bright + thin (do NOT multiply by DPR unless you also DPR-scale the canvas)
-    ctx.strokeStyle = 'rgba(255, 255, 0, 0.9)';
-    ctx.lineWidth = 1;         // or 0.75 if you want even thinner
-    ctx.lineCap = 'butt';
+  // Draw crosshairs on overlay canvas - spans full pane
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const crosshairCanvas = crosshairCanvasRef.current;
+    const pane = canvasContainerRef.current;
+    if (!canvas || !crosshairCanvas || !pane) return;
 
-    const xPos = Math.round(crosshairX) + 0.5;
-    const yPos = Math.round(height - 1 - crosshairY) + 0.5;
+    const drawCrosshairs = () => {
+      const paneRect = pane.getBoundingClientRect();
+      const imgRect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
 
-    ctx.beginPath();
-    ctx.moveTo(xPos, 0);
-    ctx.lineTo(xPos, height);
-    ctx.stroke();
+      // Size overlay to fill the entire pane
+      crosshairCanvas.width = paneRect.width * dpr;
+      crosshairCanvas.height = paneRect.height * dpr;
+      crosshairCanvas.style.width = `${paneRect.width}px`;
+      crosshairCanvas.style.height = `${paneRect.height}px`;
 
-    ctx.beginPath();
-    ctx.moveTo(0, yPos);
-    ctx.lineTo(width, yPos);
-    ctx.stroke();
+      const ctx = crosshairCanvas.getContext('2d');
+      if (!ctx) return;
 
-  }, [volume, plane, sliceIndex, crosshairX, crosshairY]);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, paneRect.width, paneRect.height);
 
-  // Convert screen coordinates to image pixel coordinates
+      // Calculate crosshair position in pane coordinates
+      const imgOffsetX = imgRect.left - paneRect.left;
+      const imgOffsetY = imgRect.top - paneRect.top;
+
+      // Scale from image pixels to displayed CSS pixels
+      const scaleX = imgRect.width / canvas.width;
+      const scaleY = imgRect.height / canvas.height;
+
+      // Crosshair position in pane CSS coordinates
+      const xCss = imgOffsetX + (crosshairX + 0.5) * scaleX;
+      const yImg = canvas.height - 1 - crosshairY + 0.5;
+      const yCss = imgOffsetY + yImg * scaleY;
+
+      // Half-pixel alignment for crisp lines
+      const xAligned = Math.round(xCss) + 0.5;
+      const yAligned = Math.round(yCss) + 0.5;
+
+      // Draw crosshairs - bright yellow
+      ctx.strokeStyle = 'rgba(255, 255, 0, 0.9)';
+      ctx.lineWidth = 1;
+      ctx.lineCap = 'butt';
+
+      // Vertical line - full pane height
+      ctx.beginPath();
+      ctx.moveTo(xAligned, 0);
+      ctx.lineTo(xAligned, paneRect.height);
+      ctx.stroke();
+
+      // Horizontal line - full pane width
+      ctx.beginPath();
+      ctx.moveTo(0, yAligned);
+      ctx.lineTo(paneRect.width, yAligned);
+      ctx.stroke();
+    };
+
+    drawCrosshairs();
+
+    const resizeObserver = new ResizeObserver(() => {
+      drawCrosshairs();
+    });
+    resizeObserver.observe(pane);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [crosshairX, crosshairY, volume, plane, sliceIndex]);
+
   const screenToImage = useCallback((clientX: number, clientY: number): Point2D | null => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
@@ -125,9 +172,8 @@ export default function SliceViewer({
     return { x, y };
   }, []);
 
-  // Check if a point is near a measurement endpoint
   const findNearbyPoint = useCallback((imagePoint: Point2D): { measurementId: string; pointKey: 'A' | 'B' } | null => {
-    const threshold = 5; // pixels
+    const threshold = 5;
     for (const m of measurements) {
       const distA = Math.sqrt((imagePoint.x - m.A.x) ** 2 + (imagePoint.y - m.A.y) ** 2);
       if (distA <= threshold) {
@@ -141,12 +187,10 @@ export default function SliceViewer({
     return null;
   }, [measurements]);
 
-  // Handle mouse down - start dragging or add measurement point
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const imagePoint = screenToImage(e.clientX, e.clientY);
     if (!imagePoint) return;
 
-    // Check if clicking on an existing measurement point
     if (measurementMode === 'distance') {
       const nearbyPoint = findNearbyPoint(imagePoint);
       if (nearbyPoint) {
@@ -156,37 +200,31 @@ export default function SliceViewer({
       }
     }
 
-    // If measurement mode is active, handle measurement click
     if (measurementMode !== 'off' && onMeasurementClick) {
       onMeasurementClick(imagePoint);
       return;
     }
 
-    // Otherwise, update crosshairs
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dataY = canvas.height - 1 - imagePoint.y;
     onCrosshairChange(imagePoint.x, dataY);
   }, [measurementMode, onMeasurementClick, onCrosshairChange, screenToImage, findNearbyPoint]);
 
-  // Handle mouse move - update preview or drag point
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const imagePoint = screenToImage(e.clientX, e.clientY);
 
-    // Update mouse position for preview line
     if (measurementMode === 'distance' && draftPoints.length > 0) {
       setMousePosition(imagePoint);
     } else {
       setMousePosition(null);
     }
 
-    // Handle dragging
     if (dragging && imagePoint && onMeasurementPointDrag) {
       onMeasurementPointDrag(dragging.measurementId, dragging.pointKey, imagePoint);
       return;
     }
 
-    // Handle crosshair dragging (only when not in measurement mode)
     if (e.buttons === 1 && measurementMode === 'off') {
       const canvas = canvasRef.current;
       if (!canvas || !imagePoint) return;
@@ -195,18 +233,15 @@ export default function SliceViewer({
     }
   }, [measurementMode, draftPoints.length, screenToImage, dragging, onMeasurementPointDrag, onCrosshairChange]);
 
-  // Handle mouse up - stop dragging
   const handleMouseUp = useCallback(() => {
     setDragging(null);
   }, []);
 
-  // Handle mouse leave - clear preview
   const handleMouseLeave = useCallback(() => {
     setMousePosition(null);
     setDragging(null);
   }, []);
 
-  // Image to screen coordinate transform for overlay
   const imageToScreen = useCallback((p: Point2D): Point2D => {
     return p;
   }, []);
@@ -254,7 +289,7 @@ export default function SliceViewer({
         </div>
       </div>
 
-      {/* Canvas container */}
+      {/* Canvas container (the pane) */}
       <div
         ref={canvasContainerRef}
         style={{
@@ -268,6 +303,7 @@ export default function SliceViewer({
           position: 'relative',
         }}
       >
+        {/* Image wrapper with transform zoom */}
         <div style={{ position: 'relative', transform: 'scale(2.0)' }}>
           <canvas
             ref={canvasRef}
@@ -295,6 +331,19 @@ export default function SliceViewer({
             canvasHeight={sliceDims.height}
           />
         </div>
+
+        {/* Crosshair overlay - fills entire pane, on top of image */}
+        <canvas
+          ref={crosshairCanvasRef}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: 10,
+          }}
+        />
       </div>
 
       {/* Dimension info */}
