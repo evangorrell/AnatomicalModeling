@@ -60,9 +60,12 @@ interface QuadViewProps {
   onMeshStateChange: (updates: Partial<MeshState>) => void;
   onZoomHandlersReady?: (handlers: { zoomIn: () => void; zoomOut: () => void; getCurrentZoom: () => number }) => void;
   measurementMode?: MeasurementMode;
+  onMeasurementModeChange?: (mode: MeasurementMode) => void;
   measurementClearKey?: number;
+  onMeasurementClear?: () => void;
   undoKey?: number;
   showCrosshairs?: boolean;
+  onShowCrosshairsChange?: (show: boolean) => void;
 }
 
 export default function QuadView({
@@ -73,9 +76,12 @@ export default function QuadView({
   onMeshStateChange,
   onZoomHandlersReady,
   measurementMode = 'off',
+  onMeasurementModeChange,
   measurementClearKey = 0,
+  onMeasurementClear,
   undoKey = 0,
   showCrosshairs = true,
+  onShowCrosshairsChange,
 }: QuadViewProps) {
   const [dims] = useState(() => volume.dims);
 
@@ -86,6 +92,7 @@ export default function QuadView({
   }));
 
   const [measurementState, setMeasurementState] = useState<MeasurementState>(initialMeasurementState);
+  const [showGrid, setShowGrid] = useState(true);
 
   // Track which panel was last modified for undo
   const lastModifiedPanelRef = useRef<PlaneType | null>(null);
@@ -229,6 +236,17 @@ export default function QuadView({
     });
   }, [volume.pixDims]);
 
+  // Handle cancelling a measurement (e.g., mouse leaves canvas during drag)
+  const handleMeasurementCancel = useCallback((panel: PlaneType) => {
+    setMeasurementState(prev => ({
+      ...prev,
+      draftByPanel: {
+        ...prev.draftByPanel,
+        [panel]: [],
+      },
+    }));
+  }, []);
+
   // Handlers for each slice viewer
   const handleAxialSliceChange = useCallback((z: number) => {
     setCrosshair(prev => ({ ...prev, z }));
@@ -311,14 +329,149 @@ export default function QuadView({
 
   return (
     <div style={{
-      display: 'grid',
-      gridTemplateColumns: '1fr 1fr',
-      gridTemplateRows: '1fr 1fr',
-      gap: 0,
+      display: 'flex',
+      flexDirection: 'column',
       height: '100%',
+      minHeight: 0,
       overflow: 'hidden',
       background: 'hsl(var(--background))',
+      gap: '8px',
     }}>
+      {/* Global Toolbar Strip */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '28px',
+        minHeight: '28px',
+        padding: '0 8px',
+        background: 'rgba(255, 255, 255, 0.03)',
+        border: '1px solid rgba(255, 255, 255, 0.06)',
+        borderRadius: '8px',
+        flexShrink: 0,
+      }}>
+        {/* Controls pill group */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '0 10px',
+          background: 'rgba(255, 255, 255, 0.05)',
+          borderRadius: '6px',
+          height: '20px',
+        }}>
+          {/* Crosshairs Toggle */}
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            fontSize: '11px',
+            color: 'hsl(var(--foreground) / 0.85)',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}>
+            <input
+              type="checkbox"
+              checked={showCrosshairs}
+              onChange={(e) => onShowCrosshairsChange?.(e.target.checked)}
+              style={{
+                width: '12px',
+                height: '12px',
+                accentColor: 'hsl(var(--primary))',
+                cursor: 'pointer',
+              }}
+            />
+            Crosshairs
+          </label>
+
+          <div style={{ width: '1px', height: '12px', background: 'rgba(255, 255, 255, 0.12)' }} />
+
+          {/* Grid Toggle */}
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            fontSize: '11px',
+            color: 'hsl(var(--foreground) / 0.85)',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}>
+            <input
+              type="checkbox"
+              checked={showGrid}
+              onChange={(e) => setShowGrid(e.target.checked)}
+              style={{
+                width: '12px',
+                height: '12px',
+                accentColor: 'hsl(var(--primary))',
+                cursor: 'pointer',
+              }}
+            />
+            Grid
+          </label>
+
+          <div style={{ width: '1px', height: '12px', background: 'rgba(255, 255, 255, 0.12)' }} />
+
+          {/* Measure Toggle */}
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            fontSize: '11px',
+            color: 'hsl(var(--foreground) / 0.85)',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}>
+            <input
+              type="checkbox"
+              checked={measurementMode === 'distance'}
+              onChange={(e) => onMeasurementModeChange?.(e.target.checked ? 'distance' : 'off')}
+              style={{
+                width: '12px',
+                height: '12px',
+                accentColor: 'hsl(var(--primary))',
+                cursor: 'pointer',
+              }}
+            />
+            Measure
+          </label>
+
+          <div style={{ width: '1px', height: '12px', background: 'rgba(255, 255, 255, 0.12)' }} />
+
+          {/* Clear Button */}
+          <button
+            onClick={() => onMeasurementClear?.()}
+            style={{
+              padding: '2px 8px',
+              background: 'transparent',
+              border: 'none',
+              borderRadius: '4px',
+              color: 'hsl(var(--muted-foreground))',
+              fontSize: '11px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'background 0.15s ease',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+
+      {/* Quad Grid */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gridTemplateRows: '1fr 1fr',
+        gap: 0,
+        flex: 1,
+        minHeight: 0,
+        overflow: 'hidden',
+        borderRadius: '8px',
+      }}>
       {/* Top Left: Axial (Red) */}
       <QuadCell position="topLeft">
         <SliceViewer
@@ -336,7 +489,8 @@ export default function QuadView({
         draftPoints={measurementState.draftByPanel.axial}
         onMeasurementClick={(p) => handleMeasurementClick('axial', p)}
         onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('axial', id, key, pt)}
-          showCrosshairs={showCrosshairs}
+        onMeasurementCancel={() => handleMeasurementCancel('axial')}
+        showCrosshairs={showCrosshairs}
         />
       </QuadCell>
 
@@ -355,18 +509,18 @@ export default function QuadView({
             height: `${VIEWER_HEADER_HEIGHT}px`,
             minHeight: `${VIEWER_HEADER_HEIGHT}px`,
             background: 'hsl(var(--primary))',
-            padding: '0 8px',
-            fontSize: '12px',
+            padding: '0 6px',
+            fontSize: '11px',
             fontWeight: 600,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: '8px',
+            gap: '6px',
             color: 'hsl(var(--primary-foreground))',
             whiteSpace: 'nowrap',
             boxSizing: 'border-box',
           }}>
-          <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>3D View</span>
+          <span style={{ whiteSpace: 'nowrap', flexShrink: 0, fontSize: '11px' }}>3D View</span>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flexShrink: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
@@ -461,6 +615,7 @@ export default function QuadView({
             onZoomChange={handleZoomChange}
             crosshairPosition={normalizedCrosshair}
             showCrosshairPlanes={showCrosshairs}
+            showGrid={showGrid}
             volumeDims={dims}
             voxelSpacing={volume.pixDims}
           />
@@ -485,6 +640,7 @@ export default function QuadView({
           draftPoints={measurementState.draftByPanel.coronal}
           onMeasurementClick={(p) => handleMeasurementClick('coronal', p)}
           onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('coronal', id, key, pt)}
+          onMeasurementCancel={() => handleMeasurementCancel('coronal')}
           showCrosshairs={showCrosshairs}
         />
       </QuadCell>
@@ -506,9 +662,11 @@ export default function QuadView({
           draftPoints={measurementState.draftByPanel.sagittal}
           onMeasurementClick={(p) => handleMeasurementClick('sagittal', p)}
           onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('sagittal', id, key, pt)}
+          onMeasurementCancel={() => handleMeasurementCancel('sagittal')}
           showCrosshairs={showCrosshairs}
         />
       </QuadCell>
+      </div>
     </div>
   );
 }

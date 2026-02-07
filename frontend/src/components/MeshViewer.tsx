@@ -22,6 +22,7 @@ interface MeshViewerProps {
   // Crosshair planes for quad-view
   crosshairPosition?: { x: number; y: number; z: number }; // Normalized -1 to 1
   showCrosshairPlanes?: boolean;
+  showGrid?: boolean;
   volumeDims?: [number, number, number];
   voxelSpacing?: [number, number, number];
 }
@@ -68,6 +69,9 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
 
   // Use key to force re-render when position changes (buffer geometry doesn't auto-update)
   const posKey = `${posX.toFixed(2)}-${posY.toFixed(2)}-${posZ.toFixed(2)}`;
+  
+  const color = '#ffff00'
+  const opacity = 0.6;
 
   return (
     <group key={posKey}>
@@ -81,7 +85,7 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
             itemSize={3}
           />
         </bufferGeometry>
-        <lineBasicMaterial color="#f1c40f" linewidth={2} />
+        <lineBasicMaterial color={color} transparent opacity={opacity} />
       </line>
       {/* Y-axis line (up-down) - yellow */}
       <line>
@@ -93,7 +97,7 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
             itemSize={3}
           />
         </bufferGeometry>
-        <lineBasicMaterial color="#f1c40f" linewidth={2} />
+        <lineBasicMaterial color={color} transparent opacity={opacity} />
       </line>
       {/* Z-axis line (front-back) - yellow */}
       <line>
@@ -111,7 +115,7 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
   );
 }
 
-function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange, crosshairPosition, showCrosshairPlanes, volumeDims, voxelSpacing }: MeshViewerProps) {
+function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange, crosshairPosition, showCrosshairPlanes, showGrid = true, volumeDims, voxelSpacing }: MeshViewerProps) {
   const { brain: niftiBrain, tumor: niftiTumor } = useMeshes(studyId);
   const cameraRef = useRef<THREE.PerspectiveCamera>(null);
   const controlsRef = useRef<any>(null);
@@ -343,11 +347,13 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange
       />
       <pointLight position={[0, 10, 0]} intensity={0.3} />
 
-      {/* Subtle grid floor */}                                                                                                                                                                         
-      <gridHelper                                                                                                                                                                                       
-        args={[200, 20, '#3b8ebd', '#1e3a50']}                                                                                                                                                          
-        position={[0, -100, 0]}                                                                                                                                                                         
-      />                                                                                                                                                                                                
+      {/* Subtle grid floor */}
+      {showGrid && (
+        <gridHelper
+          args={[200, 20, '#3b8ebd', '#1e3a50']}
+          position={[0, -100, 0]}
+        />
+      )}                                                                                                                                                                                                
   
       {/* Render brain mesh (from either STL or NIfTI) */}
       {(stlBrainGeometry || niftiBrain.geometry) && (
@@ -399,7 +405,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange
         dampingFactor={0.05}
         rotateSpeed={0.5}
         zoomSpeed={0.8}
-        panSpeed={0.5}
+        enablePan={false}
         minPolarAngle={0}
         maxPolarAngle={Math.PI}
         minDistance={MIN_ZOOM_DISTANCE}
@@ -417,6 +423,7 @@ export default function MeshViewer({
   onZoomChange,
   crosshairPosition,
   showCrosshairPlanes,
+  showGrid = true,
   volumeDims,
   voxelSpacing,
 }: MeshViewerProps) {
@@ -425,7 +432,7 @@ export default function MeshViewer({
       style={{
         width: '100%',
         height: '100%',
-        background: 'hsl(222 28% 7%)'
+        background: 'hsl(222, 30%, 9%)'
       }}
       shadows
     >
@@ -437,6 +444,7 @@ export default function MeshViewer({
         onZoomChange={onZoomChange}
         crosshairPosition={crosshairPosition}
         showCrosshairPlanes={showCrosshairPlanes}
+        showGrid={showGrid}
         volumeDims={volumeDims}
         voxelSpacing={voxelSpacing}
       />

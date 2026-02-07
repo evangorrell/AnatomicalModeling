@@ -64,6 +64,7 @@ RUN_COMMANDS.md
 # Old development docs
 imaging-worker/docs/
 imaging-worker/INSTALL.md
+miscellaneous-images/
 
 # Gitignore
 .gitignore

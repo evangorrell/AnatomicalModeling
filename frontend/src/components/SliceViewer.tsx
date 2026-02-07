@@ -21,6 +21,7 @@ interface SliceViewerProps {
   draftPoints?: Point2D[];
   onMeasurementClick?: (point: Point2D) => void;
   onMeasurementPointDrag?: (measurementId: string, pointKey: 'A' | 'B', newPoint: Point2D) => void;
+  onMeasurementCancel?: () => void;
   showCrosshairs?: boolean;
 }
 
@@ -39,6 +40,7 @@ export default function SliceViewer({
   draftPoints = [],
   onMeasurementClick,
   onMeasurementPointDrag,
+  onMeasurementCancel,
   showCrosshairs = true,
 }: SliceViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -54,6 +56,8 @@ export default function SliceViewer({
 
   // Track if mouse was pressed down on THIS canvas (to avoid capturing drags from other panels)
   const isMouseDownHereRef = useRef(false);
+  // Track if we're actively drawing a new measurement (click-drag interaction)
+  const isMeasuringRef = useRef(false);
 
   // Global mouseup listener to reset state when mouse is released anywhere
   useEffect(() => {
@@ -154,9 +158,9 @@ export default function SliceViewer({
       const xAligned = Math.round(xCss) + 0.5;
       const yAligned = Math.round(yCss) + 0.5;
 
-      // Draw crosshairs - bright yellow
-      ctx.strokeStyle = 'rgba(255, 255, 0, 0.9)';
-      ctx.lineWidth = 1;
+      // Draw crosshairs - yellow with reduced opacity for less eye strain
+      ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
+      ctx.lineWidth = 0.8;
       ctx.lineCap = 'butt';
 
       // Vertical line - full pane height
@@ -225,31 +229,40 @@ export default function SliceViewer({
     if (!imagePoint) return;
 
     if (measurementMode === 'distance') {
+      // Check if clicking near an existing measurement point to drag it
       const nearbyPoint = findNearbyPoint(imagePoint);
       if (nearbyPoint) {
         setDragging(nearbyPoint);
         e.preventDefault();
         return;
       }
+
+      // Start a new measurement - first point on mousedown
+      if (onMeasurementClick) {
+        onMeasurementClick(imagePoint);
+        isMeasuringRef.current = true;
+        setMousePosition(imagePoint); // Initialize preview position
+        e.preventDefault();
+        return;
+      }
     }
 
-    if (measurementMode !== 'off' && onMeasurementClick) {
-      onMeasurementClick(imagePoint);
-      return;
-    }
+    // Only update crosshair position if crosshairs are enabled
+    if (!showCrosshairs) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dataY = canvas.height - 1 - imagePoint.y;
     onCrosshairChange(imagePoint.x, dataY);
-  }, [measurementMode, onMeasurementClick, onCrosshairChange, screenToImage, findNearbyPoint]);
+  }, [measurementMode, onMeasurementClick, onCrosshairChange, screenToImage, findNearbyPoint, showCrosshairs]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const imagePoint = screenToImage(e.clientX, e.clientY);
 
-    if (measurementMode === 'distance' && draftPoints.length > 0) {
+    // Track mouse position for measurement preview during drag
+    if (measurementMode === 'distance' && isMeasuringRef.current && draftPoints.length > 0) {
       setMousePosition(imagePoint);
-    } else {
+    } else if (!isMeasuringRef.current) {
       setMousePosition(null);
     }
 
@@ -260,25 +273,41 @@ export default function SliceViewer({
 
     // Only handle crosshair dragging if mouse was pressed down on THIS canvas
     // This prevents capturing drags that started in other panels (like 3D view)
-    if (e.buttons === 1 && measurementMode === 'off' && isMouseDownHereRef.current) {
+    // Also only allow if crosshairs are enabled
+    if (e.buttons === 1 && measurementMode === 'off' && isMouseDownHereRef.current && showCrosshairs) {
       const canvas = canvasRef.current;
       if (!canvas || !imagePoint) return;
       const dataY = canvas.height - 1 - imagePoint.y;
       onCrosshairChange(imagePoint.x, dataY);
     }
-  }, [measurementMode, draftPoints.length, screenToImage, dragging, onMeasurementPointDrag, onCrosshairChange]);
+  }, [measurementMode, draftPoints.length, screenToImage, dragging, onMeasurementPointDrag, onCrosshairChange, showCrosshairs]);
 
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     isMouseDownHereRef.current = false;
     setDragging(null);
-  }, []);
+
+    // Complete measurement on mouse release
+    if (isMeasuringRef.current && measurementMode === 'distance' && onMeasurementClick) {
+      const imagePoint = screenToImage(e.clientX, e.clientY);
+      if (imagePoint) {
+        onMeasurementClick(imagePoint); // Second point completes the measurement
+      }
+      isMeasuringRef.current = false;
+      setMousePosition(null);
+    }
+  }, [measurementMode, onMeasurementClick, screenToImage]);
 
   const handleMouseLeave = useCallback(() => {
     setMousePosition(null);
     // Don't reset isMouseDownHereRef here - only on mouseup
     // This allows dragging to continue if user briefly leaves and re-enters
     setDragging(null);
-  }, []);
+    // Cancel measurement if user leaves canvas while measuring
+    if (isMeasuringRef.current) {
+      isMeasuringRef.current = false;
+      onMeasurementCancel?.();
+    }
+  }, [onMeasurementCancel]);
 
   const imageToScreen = useCallback((p: Point2D): Point2D => {
     return p;
@@ -358,7 +387,7 @@ export default function SliceViewer({
               width: '100%',
               height: '100%',
               objectFit: 'contain',
-              cursor: dragging ? 'grabbing' : (measurementMode !== 'off' ? 'crosshair' : 'crosshair'),
+              cursor: dragging ? 'grabbing' : (measurementMode !== 'off' ? 'crosshair' : (showCrosshairs ? 'crosshair' : 'default')),
               imageRendering: 'pixelated',
               background: '#000',
             }}
