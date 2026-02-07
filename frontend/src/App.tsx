@@ -405,7 +405,15 @@ export default function App() {
           ANATOMICAL MODELING
         </h1>
         <div style={{ display: 'flex', gap: '32px', alignItems: 'center' }}>
-          <a href="#main" style={{ color: 'rgba(255, 255, 255, 0.8)', textDecoration: 'none', fontSize: '15px' }}>
+          <a
+            href="#main"
+            onClick={(e) => {
+              e.preventDefault();
+              resetViewer();
+              document.getElementById('main')?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            style={{ color: 'rgba(255, 255, 255, 0.8)', textDecoration: 'none', fontSize: '15px', cursor: 'pointer' }}
+          >
             Upload
           </a>
           <a href="#contact" style={{ color: 'rgba(255, 255, 255, 0.8)', textDecoration: 'none', fontSize: '15px' }}>
