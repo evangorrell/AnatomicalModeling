@@ -119,9 +119,9 @@ export function useNiftiVolume(file: File | null): UseNiftiVolumeResult {
           max,
           header,
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Failed to load NIfTI:', err);
-        setError(err.message || 'Failed to load NIfTI file');
+        setError(err instanceof Error ? err.message : 'Failed to load NIfTI file');
       } finally {
         setLoading(false);
       }

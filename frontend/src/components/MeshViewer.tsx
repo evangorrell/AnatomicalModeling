@@ -3,9 +3,11 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { useMeshes } from '../hooks/useMeshes';
 import { MeshState } from '../types';
 import { verifyAssignmentByVolume } from '../utils/meshAnalysis';
+import { computeGeometryCenter, centerGeometry } from '../utils/geometryUtils';
 
 // Zoom limits: 3% to 110%
 // percentage = ((500 - distance) / 450) * 100
@@ -118,7 +120,7 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
 function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange, crosshairPosition, showCrosshairPlanes, showGrid = true, volumeDims, voxelSpacing }: MeshViewerProps) {
   const { brain: niftiBrain, tumor: niftiTumor } = useMeshes(studyId);
   const cameraRef = useRef<THREE.PerspectiveCamera>(null);
-  const controlsRef = useRef<any>(null);
+  const controlsRef = useRef<OrbitControlsImpl>(null);
   const [stlBrainGeometry, setStlBrainGeometry] = useState<THREE.BufferGeometry | null>(null);
   const [stlTumorGeometry, setStlTumorGeometry] = useState<THREE.BufferGeometry | null>(null);
   const [rawBrainGeometry, setRawBrainGeometry] = useState<THREE.BufferGeometry | null>(null);
@@ -184,45 +186,16 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange
 
   // Center meshes - use brain as reference if available, otherwise center tumor alone
   useEffect(() => {
-    // Need at least one mesh to center
-    if (!rawBrainGeometry && !rawTumorGeometry) {
-      return;
-    }
-
-    // Determine the reference geometry for centering
     const referenceGeometry = rawBrainGeometry || rawTumorGeometry;
     if (!referenceGeometry) return;
 
-    referenceGeometry.computeBoundingBox();
-    const refBox = referenceGeometry.boundingBox;
-    if (!refBox) return;
+    const center = computeGeometryCenter(referenceGeometry);
 
-    const center = new THREE.Vector3();
-    refBox.getCenter(center);
-
-    console.log('Centering meshes using reference center:', center);
-
-    // Center brain if it exists
     if (rawBrainGeometry) {
-      const centeredBrain = rawBrainGeometry.clone();
-      centeredBrain.translate(-center.x, -center.y, -center.z);
-      setStlBrainGeometry(centeredBrain);
+      setStlBrainGeometry(centerGeometry(rawBrainGeometry, center));
     }
-
-    // Center tumor if it exists (using same offset to preserve relative position)
     if (rawTumorGeometry) {
-      const centeredTumor = rawTumorGeometry.clone();
-      centeredTumor.translate(-center.x, -center.y, -center.z);
-      setStlTumorGeometry(centeredTumor);
-
-      // Log tumor's position for verification
-      centeredTumor.computeBoundingBox();
-      const tumorBox = centeredTumor.boundingBox;
-      if (tumorBox) {
-        const tumorCenter = new THREE.Vector3();
-        tumorBox.getCenter(tumorCenter);
-        console.log('Tumor center after centering:', tumorCenter);
-      }
+      setStlTumorGeometry(centerGeometry(rawTumorGeometry, center));
     }
   }, [rawBrainGeometry, rawTumorGeometry]);
 

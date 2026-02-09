@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { getMeshUrl } from '../api';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import * as THREE from 'three';
+import { computeGeometryCenter, centerGeometry } from '../utils/geometryUtils';
 
 interface MeshData {
   geometry: THREE.BufferGeometry | null;
@@ -32,47 +33,23 @@ export function useMeshes(studyId: string | null): UseMeshesResult {
   const rawTumorRef = useRef<THREE.BufferGeometry | null>(null);
   const hasCenteredRef = useRef(false);
 
-  // Function to center both meshes together using brain as reference
+  // Center both meshes together using brain as reference
   const centerMeshesTogether = () => {
     const rawBrain = rawBrainRef.current;
     if (!rawBrain) return;
 
-    // Compute brain's bounding box center
-    rawBrain.computeBoundingBox();
-    const brainBox = rawBrain.boundingBox;
-    if (!brainBox) return;
+    const center = computeGeometryCenter(rawBrain);
 
-    const center = new THREE.Vector3();
-    brainBox.getCenter(center);
-
-    console.log('[useMeshes] Centering meshes together using brain center:', center);
-
-    // Clone and translate brain
-    const centeredBrain = rawBrain.clone();
-    centeredBrain.translate(-center.x, -center.y, -center.z);
     setBrain({
-      geometry: centeredBrain,
+      geometry: centerGeometry(rawBrain, center),
       loading: false,
       error: null,
     });
 
-    // If tumor exists, translate by the SAME offset
     const rawTumor = rawTumorRef.current;
     if (rawTumor) {
-      const centeredTumor = rawTumor.clone();
-      centeredTumor.translate(-center.x, -center.y, -center.z);
-
-      // Log tumor position for verification
-      centeredTumor.computeBoundingBox();
-      const tumorBox = centeredTumor.boundingBox;
-      if (tumorBox) {
-        const tumorCenter = new THREE.Vector3();
-        tumorBox.getCenter(tumorCenter);
-        console.log('[useMeshes] Tumor position relative to brain center:', tumorCenter);
-      }
-
       setTumor({
-        geometry: centeredTumor,
+        geometry: centerGeometry(rawTumor, center),
         loading: false,
         error: null,
       });

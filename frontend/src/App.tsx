@@ -53,6 +53,15 @@ export default function App() {
   // WebSocket reference
   const socketRef = useRef<Socket | null>(null);
 
+  const resetProgress = () => {
+    setProcessing(false);
+    setProgress(0);
+    setProgressMessage('');
+  };
+
+  /** Sort NIfTI files by size descending — larger = MRI image, smaller = labels */
+  const getSortedNifti = () => [...uploadedFiles.nifti].sort((a, b) => b.size - a.size);
+
   // Cleanup WebSocket on unmount
   useEffect(() => {
     return () => {
@@ -142,8 +151,7 @@ export default function App() {
     setProgress(0);
     setProgressMessage('Uploading files...');
 
-    // Sort by size: larger = image, smaller = labels
-    const sorted = [...uploadedFiles.nifti].sort((a, b) => b.size - a.size);
+    const sorted = getSortedNifti();
     const imageFile = sorted[0];
     const labelsFile = sorted[1];
 
@@ -178,9 +186,7 @@ export default function App() {
           setCurrentStudyId(studyId);
           setNiftiFileForViewer(imageFile);
           setViewerType('quad');
-          setProcessing(false);
-          setProgress(0);
-          setProgressMessage('');
+          resetProgress();
           setViewerMode('viewer');
           socket.disconnect();
         }, 1000);
@@ -188,24 +194,19 @@ export default function App() {
 
       socket.on('error', (data: { message: string }) => {
         setError(data.message || 'Processing failed.');
-        setProcessing(false);
-        setProgress(0);
-        setProgressMessage('');
+        resetProgress();
         socket.disconnect();
       });
 
       socket.on('connect_error', () => {
         setError('Connection error. Please refresh and try again.');
-        setProcessing(false);
-        setProgress(0);
-        setProgressMessage('');
+        resetProgress();
       });
 
-    } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Upload failed.');
-      setProcessing(false);
-      setProgress(0);
-      setProgressMessage('');
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } }; message?: string };
+      setError(e.response?.data?.message || e.message || 'Upload failed.');
+      resetProgress();
     }
   };
 
@@ -226,8 +227,7 @@ export default function App() {
   const handleViewHybrid = async () => {
     if (uploadedFiles.nifti.length !== 2 || uploadedFiles.stl.length === 0) return;
 
-    const sorted = [...uploadedFiles.nifti].sort((a, b) => b.size - a.size);
-    const imageFile = sorted[0];
+    const imageFile = getSortedNifti()[0];
 
     const { brain: brainFile, tumor: tumorFile } = await detectBrainAndTumor(uploadedFiles.stl);
 
@@ -252,8 +252,7 @@ export default function App() {
     setStlUrls({ brain: null, tumor: null });
 
     setError('');
-    setProgress(0);
-    setProgressMessage('');
+    resetProgress();
   };
 
   return (

@@ -1,20 +1,10 @@
 import { useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { NiftiVolume } from '../hooks/useNiftiVolume';
+import { useMeasurements } from '../hooks/useMeasurements';
 import SliceViewer, { VIEWER_HEADER_HEIGHT } from './SliceViewer';
 import MeshViewer from './MeshViewer';
 import { MeshState } from '../types';
-import {
-  Point2D,
-  Measurement,
-  MeasurementMode,
-  PlaneType,
-  MeasurementState,
-  initialMeasurementState,
-} from '../measurements/types';
-import {
-  calculateDistanceMm,
-  generateMeasurementId,
-} from '../measurements/math';
+import { MeasurementMode } from '../measurements/types';
 
 // Divider style for the "+" center divider
 const DIVIDER = '2px solid white';
@@ -91,11 +81,14 @@ export default function QuadView({
     z: Math.floor(volume.dims[2] / 2),
   }));
 
-  const [measurementState, setMeasurementState] = useState<MeasurementState>(initialMeasurementState);
-  const [showGrid, setShowGrid] = useState(true);
+  const measurements = useMeasurements({
+    measurementMode,
+    pixDims: volume.pixDims,
+    clearKey: measurementClearKey,
+    undoKey,
+  });
 
-  // Track which panel was last modified for undo
-  const lastModifiedPanelRef = useRef<PlaneType | null>(null);
+  const [showGrid, setShowGrid] = useState(true);
 
   useEffect(() => {
     setCrosshair({
@@ -104,148 +97,6 @@ export default function QuadView({
       z: Math.floor(volume.dims[2] / 2),
     });
   }, [volume]);
-
-  // Clear measurements when clear key changes
-  useEffect(() => {
-    if (measurementClearKey > 0) {
-      setMeasurementState(initialMeasurementState);
-      lastModifiedPanelRef.current = null;
-    }
-  }, [measurementClearKey]);
-
-  // Undo last measurement when undo key changes
-  useEffect(() => {
-    if (undoKey > 0) {
-      setMeasurementState(prev => {
-        // First, check if there are any draft points to clear
-        for (const panel of ['axial', 'coronal', 'sagittal'] as PlaneType[]) {
-          if (prev.draftByPanel[panel].length > 0) {
-            return {
-              ...prev,
-              draftByPanel: {
-                ...prev.draftByPanel,
-                [panel]: [],
-              },
-            };
-          }
-        }
-
-        // Otherwise, remove the most recent measurement (by createdAt)
-        let latestPanel: PlaneType | null = null;
-        let latestTime = 0;
-
-        for (const panel of ['axial', 'coronal', 'sagittal'] as PlaneType[]) {
-          const measurements = prev.measurementsByPanel[panel];
-          if (measurements.length > 0) {
-            const lastMeasurement = measurements[measurements.length - 1];
-            if (lastMeasurement.createdAt > latestTime) {
-              latestTime = lastMeasurement.createdAt;
-              latestPanel = panel;
-            }
-          }
-        }
-
-        if (latestPanel) {
-          return {
-            ...prev,
-            measurementsByPanel: {
-              ...prev.measurementsByPanel,
-              [latestPanel]: prev.measurementsByPanel[latestPanel].slice(0, -1),
-            },
-          };
-        }
-
-        return prev;
-      });
-    }
-  }, [undoKey]);
-
-  // Handle measurement click for a specific panel
-  const handleMeasurementClick = useCallback((panel: PlaneType, point: Point2D) => {
-    if (measurementMode === 'off') return;
-
-    lastModifiedPanelRef.current = panel;
-
-    setMeasurementState(prev => {
-      const currentDraft = [...prev.draftByPanel[panel], point];
-
-      if (currentDraft.length < 2) {
-        return {
-          ...prev,
-          draftByPanel: {
-            ...prev.draftByPanel,
-            [panel]: currentDraft,
-          },
-        };
-      }
-
-      const [A, B] = currentDraft;
-      const mm = calculateDistanceMm(A, B, panel, volume.pixDims);
-      const newMeasurement: Measurement = {
-        kind: 'distance',
-        id: generateMeasurementId(),
-        A,
-        B,
-        mm,
-        createdAt: Date.now(),
-      };
-
-      return {
-        ...prev,
-        measurementsByPanel: {
-          ...prev.measurementsByPanel,
-          [panel]: [...prev.measurementsByPanel[panel], newMeasurement],
-        },
-        draftByPanel: {
-          ...prev.draftByPanel,
-          [panel]: [],
-        },
-      };
-    });
-  }, [measurementMode, volume.pixDims]);
-
-  // Handle dragging a measurement point
-  const handleMeasurementPointDrag = useCallback((panel: PlaneType, measurementId: string, pointKey: 'A' | 'B', newPoint: Point2D) => {
-    setMeasurementState(prev => {
-      const measurements = prev.measurementsByPanel[panel];
-      const idx = measurements.findIndex(m => m.id === measurementId);
-      if (idx === -1) return prev;
-
-      const measurement = measurements[idx];
-      const updatedA = pointKey === 'A' ? newPoint : measurement.A;
-      const updatedB = pointKey === 'B' ? newPoint : measurement.B;
-      const mm = calculateDistanceMm(updatedA, updatedB, panel, volume.pixDims);
-
-      const updatedMeasurement: Measurement = {
-        ...measurement,
-        A: updatedA,
-        B: updatedB,
-        mm,
-      };
-
-      const newMeasurements = [...measurements];
-      newMeasurements[idx] = updatedMeasurement;
-
-      return {
-        ...prev,
-        measurementsByPanel: {
-          ...prev.measurementsByPanel,
-          [panel]: newMeasurements,
-        },
-      };
-    });
-  }, [volume.pixDims]);
-
-  // Handle cancelling a measurement (e.g., mouse leaves canvas during drag)
-  const handleMeasurementCancel = useCallback((panel: PlaneType) => {
-    setMeasurementState(prev => ({
-      ...prev,
-      draftByPanel: {
-        ...prev.draftByPanel,
-        [panel]: [],
-      },
-    }));
-  }, []);
 
   // Handlers for each slice viewer
   const handleAxialSliceChange = useCallback((z: number) => {
@@ -485,11 +336,11 @@ export default function QuadView({
         color="#e74c3c"
         label="Axial"
         measurementMode={measurementMode}
-        measurements={measurementState.measurementsByPanel.axial}
-        draftPoints={measurementState.draftByPanel.axial}
-        onMeasurementClick={(p) => handleMeasurementClick('axial', p)}
-        onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('axial', id, key, pt)}
-        onMeasurementCancel={() => handleMeasurementCancel('axial')}
+        measurements={measurements.state.measurementsByPanel.axial}
+        draftPoints={measurements.state.draftByPanel.axial}
+        onMeasurementClick={(p) => measurements.handleClick('axial', p)}
+        onMeasurementPointDrag={(id, key, pt) => measurements.handlePointDrag('axial', id, key, pt)}
+        onMeasurementCancel={() => measurements.handleCancel('axial')}
         showCrosshairs={showCrosshairs}
         />
       </QuadCell>
@@ -636,11 +487,11 @@ export default function QuadView({
           color="#2ecc71"
           label="Coronal"
           measurementMode={measurementMode}
-          measurements={measurementState.measurementsByPanel.coronal}
-          draftPoints={measurementState.draftByPanel.coronal}
-          onMeasurementClick={(p) => handleMeasurementClick('coronal', p)}
-          onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('coronal', id, key, pt)}
-          onMeasurementCancel={() => handleMeasurementCancel('coronal')}
+          measurements={measurements.state.measurementsByPanel.coronal}
+          draftPoints={measurements.state.draftByPanel.coronal}
+          onMeasurementClick={(p) => measurements.handleClick('coronal', p)}
+          onMeasurementPointDrag={(id, key, pt) => measurements.handlePointDrag('coronal', id, key, pt)}
+          onMeasurementCancel={() => measurements.handleCancel('coronal')}
           showCrosshairs={showCrosshairs}
         />
       </QuadCell>
@@ -658,11 +509,11 @@ export default function QuadView({
           color="#f1c40f"
           label="Sagittal"
           measurementMode={measurementMode}
-          measurements={measurementState.measurementsByPanel.sagittal}
-          draftPoints={measurementState.draftByPanel.sagittal}
-          onMeasurementClick={(p) => handleMeasurementClick('sagittal', p)}
-          onMeasurementPointDrag={(id, key, pt) => handleMeasurementPointDrag('sagittal', id, key, pt)}
-          onMeasurementCancel={() => handleMeasurementCancel('sagittal')}
+          measurements={measurements.state.measurementsByPanel.sagittal}
+          draftPoints={measurements.state.draftByPanel.sagittal}
+          onMeasurementClick={(p) => measurements.handleClick('sagittal', p)}
+          onMeasurementPointDrag={(id, key, pt) => measurements.handlePointDrag('sagittal', id, key, pt)}
+          onMeasurementCancel={() => measurements.handleCancel('sagittal')}
           showCrosshairs={showCrosshairs}
         />
       </QuadCell>
