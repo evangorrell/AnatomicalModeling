@@ -1,44 +1,75 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import MeshViewer from './MeshViewer';
+import QuadView from './QuadView';
 import { MeshState } from '../types';
-import { downloadAllMeshes } from '../api';
+import { downloadMesh } from '../api';
+import { NiftiVolume } from '../hooks/useNiftiVolume';
+import { MeasurementMode } from '../measurements/types';
 
 interface ViewerLayoutProps {
-  studyId: string;
+  viewerType: '3d-only' | 'quad' | 'quad-with-stl';
+  currentStudyId: string | null;
+  stlUrls: { brain: string | null; tumor: string | null };
+  meshState: MeshState;
+  setMeshState: React.Dispatch<React.SetStateAction<MeshState>>;
+  niftiVolume: NiftiVolume | null;
+  niftiLoading: boolean;
+  hasTumorMesh: boolean;
   onReset: () => void;
 }
 
-export default function ViewerLayout({ studyId, onReset }: ViewerLayoutProps) {
-  const [meshState, setMeshState] = useState<MeshState>({
-    brain: {
-      visible: true,
-      color: '#b0b0b0', // Grey
-      opacity: 0.8,
-    },
-    tumor: {
-      visible: true,
-      color: '#ff3333', // Red
-      opacity: 1.0,
-    },
-  });
-
+export default function ViewerLayout({
+  viewerType,
+  currentStudyId,
+  stlUrls,
+  meshState,
+  setMeshState,
+  niftiVolume,
+  niftiLoading,
+  hasTumorMesh,
+  onReset,
+}: ViewerLayoutProps) {
   const [downloading, setDownloading] = useState(false);
+  const [measurementMode, setMeasurementMode] = useState<MeasurementMode>('off');
+  const [measurementClearKey, setMeasurementClearKey] = useState(0);
+  const [undoKey, setUndoKey] = useState(0);
+  const [showCrosshairs, setShowCrosshairs] = useState(true);
 
-  // Zoom handlers reference
+  // Zoom handlers
   const zoomHandlersRef = useRef<{
     zoomIn: () => void;
     zoomOut: () => void;
     getCurrentZoom: () => number;
   } | null>(null);
-  const [zoomValue, setZoomValue] = useState(200);
+  const [zoomPercentage, setZoomPercentage] = useState(50);
+
+  // Keyboard listener for Cmd+Z undo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        if (measurementMode === 'distance') {
+          e.preventDefault();
+          setUndoKey(k => k + 1);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [measurementMode]);
 
   const handleDownload = async () => {
+    if (!currentStudyId) return;
     setDownloading(true);
     try {
-      await downloadAllMeshes(studyId);
+      await downloadMesh(currentStudyId, 'brain.stl');
+      if (hasTumorMesh) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await downloadMesh(currentStudyId, 'tumor.stl');
+      }
     } catch (error) {
       console.error('Download failed:', error);
-      alert('Failed to download meshes. Please try again.');
+      alert('Failed to download meshes.');
     } finally {
       setDownloading(false);
     }
@@ -58,262 +89,225 @@ export default function ViewerLayout({ studyId, onReset }: ViewerLayoutProps) {
     }));
   };
 
-  const ColorSwatch = ({ color, onClick }: { color: string; onClick: () => void }) => (
-    <button
-      onClick={onClick}
-      style={{
-        width: '28px',
-        height: '28px',
-        borderRadius: '6px',
-        background: color,
-        border: '2px solid #e5e7eb',
-        cursor: 'pointer',
-        transition: 'all 0.2s',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'scale(1.1)';
-        e.currentTarget.style.borderColor = '#2563eb';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'scale(1)';
-        e.currentTarget.style.borderColor = '#e5e7eb';
-      }}
-    />
-  );
-
   return (
     <div style={{
       width: '100%',
-      height: '100%',
+      height: 'calc(100vh - 100px)',
       display: 'flex',
       flexDirection: 'column',
-      position: 'relative',
+      alignItems: 'center',
+      minWidth: '800px',
     }}>
-      {/* Top toolbar */}
+      {/* Wrapper for header + viewer to share same width */}
       <div style={{
-        background: 'white',
-        borderBottom: '1px solid #e5e7eb',
-        padding: '16px 24px',
+        height: '100%',
+        aspectRatio: '1',
+        maxWidth: '100%',
         display: 'flex',
-        alignItems: 'center',
-        gap: '32px',
-        flexWrap: 'wrap',
-        boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
-        zIndex: 10,
+        flexDirection: 'column',
       }}>
-        {/* Zoom control */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: '200px' }}>
-          <label style={{ fontSize: '14px', fontWeight: '500', color: '#374151', minWidth: '60px' }}>
-            Zoom
-          </label>
-          <input
-            type="range"
-            min="50"
-            max="500"
-            value={zoomValue}
-            onChange={(e) => {
-              const targetDistance = Number(e.target.value);
-              setZoomValue(targetDistance);
+        {/* Header row */}
+        <div style={{
+          width: '100%',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '12px',
+          flexShrink: 0,
+          gap: 'clamp(8px, 2vw, 16px)',
+        }}>
+          <h2 style={{ fontSize: 'clamp(16px, 2.5vw, 20px)', fontWeight: '700', margin: 0, whiteSpace: 'nowrap', flexShrink: 0 }}>
+            {viewerType === '3d-only' ? '3D Model Viewer' : 'Medical Imaging Viewer'}
+          </h2>
 
-              if (zoomHandlersRef.current) {
-                const currentDistance = zoomHandlersRef.current.getCurrentZoom();
-                const delta = currentDistance - targetDistance;
-                const steps = Math.abs(Math.round(delta / 20));
+          <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+            {currentStudyId && (
+              <button
+                onClick={handleDownload}
+                disabled={downloading}
+                style={{
+                  background: 'hsl(var(--primary))',
+                  color: 'hsl(var(--primary-foreground))',
+                  border: 'none',
+                  padding: '6px 16px',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: downloading ? 'not-allowed' : 'pointer',
+                  opacity: downloading ? 0.6 : 1,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {downloading ? 'Downloading...' : 'Download STLs'}
+              </button>
+            )}
+            <button
+              onClick={onReset}
+              style={{
+                padding: '6px 16px',
+                background: 'hsl(var(--secondary))',
+                border: '1px solid hsl(var(--border))',
+                borderRadius: '6px',
+                color: 'hsl(var(--foreground))',
+                fontSize: '13px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              ← Back to Upload
+            </button>
+          </div>
+        </div>
 
-                // Apply zoom in steps
-                for (let i = 0; i < steps; i++) {
-                  if (delta > 0) {
-                    zoomHandlersRef.current.zoomIn();
-                  } else {
+        {/* Controls for 3D-only mode */}
+        {viewerType === '3d-only' && (
+          <div style={{
+            background: 'hsl(var(--card))',
+            backdropFilter: 'blur(10px)',
+            borderRadius: '12px',
+            padding: '20px',
+            marginBottom: '20px',
+            display: 'flex',
+            gap: '24px',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '14px', fontWeight: '500' }}>Zoom</span>
+              <button
+                onClick={() => {
+                  if (zoomHandlersRef.current) {
                     zoomHandlersRef.current.zoomOut();
+                    const currentZoom = zoomHandlersRef.current.getCurrentZoom();
+                    setZoomPercentage(Math.round(((500 - currentZoom) / 450) * 100));
                   }
-                }
-              }
-            }}
-            style={{
-              flex: 1,
-              accentColor: '#2563eb',
-            }}
-          />
+                }}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  background: 'hsl(var(--secondary))',
+                  border: '1px solid hsl(var(--border))',
+                  borderRadius: '6px',
+                  color: 'hsl(var(--foreground))',
+                  fontSize: '18px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                −
+              </button>
+              <span style={{ fontSize: '14px', minWidth: '45px', textAlign: 'center' }}>
+                {zoomPercentage}%
+              </span>
+              <button
+                onClick={() => {
+                  if (zoomHandlersRef.current) {
+                    zoomHandlersRef.current.zoomIn();
+                    const currentZoom = zoomHandlersRef.current.getCurrentZoom();
+                    setZoomPercentage(Math.round(((500 - currentZoom) / 450) * 100));
+                  }
+                }}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  background: 'hsl(var(--secondary))',
+                  border: '1px solid hsl(var(--border))',
+                  borderRadius: '6px',
+                  color: 'hsl(var(--foreground))',
+                  fontSize: '18px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                +
+              </button>
+            </div>
+
+            {stlUrls.brain && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '14px', fontWeight: '500' }}>Brain</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={meshState.brain.opacity}
+                  onChange={(e) => updateBrainState({ opacity: Number(e.target.value) })}
+                  style={{ width: '100px', accentColor: 'hsl(var(--muted-foreground))' }}
+                />
+              </div>
+            )}
+
+            {stlUrls.tumor && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '14px', fontWeight: '500' }}>Tumor</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={meshState.tumor.opacity}
+                  onChange={(e) => updateTumorState({ opacity: Number(e.target.value) })}
+                  style={{ width: '100px', accentColor: 'hsl(var(--chart-3))' }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Viewer container */}
+        <div style={{
+          flex: 1,
+          minHeight: 0,
+          borderRadius: '12px',
+          overflow: 'hidden',
+          background: 'hsl(var(--card))',
+        }}>
+          {viewerType === '3d-only' ? (
+            <MeshViewer
+              studyId={null}
+              stlFiles={stlUrls}
+              meshState={meshState}
+              onZoomHandlersReady={(handlers) => {
+                zoomHandlersRef.current = handlers;
+                setZoomPercentage(Math.round(((500 - handlers.getCurrentZoom()) / 450) * 100));
+              }}
+              onZoomChange={(distance) => {
+                setZoomPercentage(Math.round(((500 - distance) / 450) * 100));
+              }}
+            />
+          ) : niftiVolume ? (
+            <QuadView
+              volume={niftiVolume}
+              studyId={viewerType === 'quad' ? currentStudyId : null}
+              stlFiles={viewerType === 'quad-with-stl' ? stlUrls : { brain: null, tumor: null }}
+              meshState={meshState}
+              onMeshStateChange={(updates) => setMeshState(prev => ({ ...prev, ...updates }))}
+              onZoomHandlersReady={(handlers) => {
+                zoomHandlersRef.current = handlers;
+                setZoomPercentage(Math.round(((500 - handlers.getCurrentZoom()) / 450) * 100));
+              }}
+              measurementMode={measurementMode}
+              onMeasurementModeChange={setMeasurementMode}
+              measurementClearKey={measurementClearKey}
+              onMeasurementClear={() => setMeasurementClearKey(k => k + 1)}
+              undoKey={undoKey}
+              showCrosshairs={showCrosshairs}
+              onShowCrosshairsChange={setShowCrosshairs}
+            />
+          ) : niftiLoading ? (
+            <div style={{
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'hsl(var(--muted-foreground))',
+            }}>
+              Loading volume data...
+            </div>
+          ) : null}
         </div>
-
-        {/* Divider */}
-        <div style={{ width: '1px', height: '40px', background: '#e5e7eb' }} />
-
-        {/* Brain controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <label style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '14px',
-            fontWeight: '500',
-            color: '#374151',
-            cursor: 'pointer',
-          }}>
-            <input
-              type="checkbox"
-              checked={meshState.brain.visible}
-              onChange={(e) => updateBrainState({ visible: e.target.checked })}
-              style={{ accentColor: '#2563eb', width: '18px', height: '18px', cursor: 'pointer' }}
-            />
-            Brain
-          </label>
-
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <ColorSwatch color="#b0b0b0" onClick={() => updateBrainState({ color: '#b0b0b0' })} />
-            <ColorSwatch color="#e0e0e0" onClick={() => updateBrainState({ color: '#e0e0e0' })} />
-            <ColorSwatch color="#909090" onClick={() => updateBrainState({ color: '#909090' })} />
-            <ColorSwatch color="#f5deb3" onClick={() => updateBrainState({ color: '#f5deb3' })} />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '140px' }}>
-            <span style={{ fontSize: '13px', color: '#6b7280', minWidth: '60px' }}>Opacity</span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={meshState.brain.opacity}
-              onChange={(e) => updateBrainState({ opacity: Number(e.target.value) })}
-              style={{ flex: 1, accentColor: '#2563eb' }}
-            />
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div style={{ width: '1px', height: '40px', background: '#e5e7eb' }} />
-
-        {/* Tumor controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <label style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '14px',
-            fontWeight: '500',
-            color: '#374151',
-            cursor: 'pointer',
-          }}>
-            <input
-              type="checkbox"
-              checked={meshState.tumor.visible}
-              onChange={(e) => updateTumorState({ visible: e.target.checked })}
-              style={{ accentColor: '#2563eb', width: '18px', height: '18px', cursor: 'pointer' }}
-            />
-            Tumor
-          </label>
-
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <ColorSwatch color="#ff3333" onClick={() => updateTumorState({ color: '#ff3333' })} />
-            <ColorSwatch color="#ff6b6b" onClick={() => updateTumorState({ color: '#ff6b6b' })} />
-            <ColorSwatch color="#cc0000" onClick={() => updateTumorState({ color: '#cc0000' })} />
-            <ColorSwatch color="#ff9966" onClick={() => updateTumorState({ color: '#ff9966' })} />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '140px' }}>
-            <span style={{ fontSize: '13px', color: '#6b7280', minWidth: '60px' }}>Opacity</span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={meshState.tumor.opacity}
-              onChange={(e) => updateTumorState({ opacity: Number(e.target.value) })}
-              style={{ flex: 1, accentColor: '#2563eb' }}
-            />
-          </div>
-        </div>
-
-        {/* Spacer */}
-        <div style={{ flex: 1 }} />
-
-        {/* New upload button */}
-        <button
-          onClick={onReset}
-          style={{
-            padding: '10px 20px',
-            background: 'white',
-            color: '#374151',
-            border: '1px solid #d1d5db',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: '500',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = '#f9fafb';
-            e.currentTarget.style.borderColor = '#9ca3af';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'white';
-            e.currentTarget.style.borderColor = '#d1d5db';
-          }}
-        >
-          New Upload
-        </button>
-      </div>
-
-      {/* 3D Viewer */}
-      <div style={{ flex: 1, position: 'relative' }}>
-        <MeshViewer
-          studyId={studyId}
-          stlFiles={{ brain: null, tumor: null }}
-          meshState={meshState}
-          onZoomHandlersReady={(handlers) => {
-            zoomHandlersRef.current = handlers;
-            // Initialize zoom value based on initial camera distance
-            const currentZoom = handlers.getCurrentZoom();
-            setZoomValue(currentZoom);
-          }}
-        />
-
-        {/* Download button (bottom-right) */}
-        <button
-          onClick={handleDownload}
-          disabled={downloading}
-          style={{
-            position: 'absolute',
-            bottom: '24px',
-            right: '24px',
-            padding: '14px 24px',
-            background: downloading ? '#9ca3af' : '#2563eb',
-            color: 'white',
-            border: 'none',
-            borderRadius: '10px',
-            fontSize: '15px',
-            fontWeight: '600',
-            cursor: downloading ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-            transition: 'all 0.2s',
-            zIndex: 10,
-          }}
-          onMouseEnter={(e) => {
-            if (!downloading) {
-              e.currentTarget.style.background = '#1d4ed8';
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 6px 8px -1px rgba(0, 0, 0, 0.15), 0 3px 6px -1px rgba(0, 0, 0, 0.08)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!downloading) {
-              e.currentTarget.style.background = '#2563eb';
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
-            }
-          }}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          {downloading ? 'Downloading...' : 'Download STLs'}
-        </button>
       </div>
     </div>
   );

@@ -113,12 +113,6 @@ export function calculateMeshVolume(geometry: THREE.BufferGeometry): number {
 
 export type MeshRole = 'brain' | 'tumor' | 'unknown';
 
-export interface ClassifiedMesh {
-  file: File;
-  role: MeshRole;
-  confidence: number;
-}
-
 /**
  * Classify a single STL file by filename
  * Returns: { role, confidence }

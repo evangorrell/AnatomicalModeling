@@ -21,7 +21,6 @@ export interface DistanceMeasurement {
 export type Measurement = DistanceMeasurement;
 
 export interface MeasurementState {
-  mode: MeasurementMode;
   measurementsByPanel: {
     axial: Measurement[];
     coronal: Measurement[];
@@ -35,7 +34,6 @@ export interface MeasurementState {
 }
 
 export const initialMeasurementState: MeasurementState = {
-  mode: 'off',
   measurementsByPanel: {
     axial: [],
     coronal: [],

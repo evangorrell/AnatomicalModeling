@@ -53,16 +53,23 @@ export default function SliceViewer({
     measurementId: string;
     pointKey: 'A' | 'B';
   } | null>(null);
+  // Sync ref mirrors dragging state so handleMouseMove works immediately
+  const draggingRef = useRef<typeof dragging>(null);
+  // Whether cursor is hovering near a draggable measurement point
+  const [hoveringPoint, setHoveringPoint] = useState(false);
 
   // Track if mouse was pressed down on THIS canvas (to avoid capturing drags from other panels)
   const isMouseDownHereRef = useRef(false);
   // Track if we're actively drawing a new measurement (click-drag interaction)
   const isMeasuringRef = useRef(false);
+  // Start point for in-progress drag measurement (so preview works before draftPoints prop updates)
+  const measureStartRef = useRef<Point2D | null>(null);
 
   // Global mouseup listener to reset state when mouse is released anywhere
   useEffect(() => {
     const handleGlobalMouseUp = () => {
       isMouseDownHereRef.current = false;
+      draggingRef.current = null;
     };
     window.addEventListener('mouseup', handleGlobalMouseUp);
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
@@ -207,7 +214,7 @@ export default function SliceViewer({
   }, []);
 
   const findNearbyPoint = useCallback((imagePoint: Point2D): { measurementId: string; pointKey: 'A' | 'B' } | null => {
-    const threshold = 5;
+    const threshold = 8;
     for (const m of measurements) {
       const distA = Math.sqrt((imagePoint.x - m.A.x) ** 2 + (imagePoint.y - m.A.y) ** 2);
       if (distA <= threshold) {
@@ -232,6 +239,7 @@ export default function SliceViewer({
       // Check if clicking near an existing measurement point to drag it
       const nearbyPoint = findNearbyPoint(imagePoint);
       if (nearbyPoint) {
+        draggingRef.current = nearbyPoint;
         setDragging(nearbyPoint);
         e.preventDefault();
         return;
@@ -239,8 +247,9 @@ export default function SliceViewer({
 
       // Start a new measurement - first point on mousedown
       if (onMeasurementClick) {
-        onMeasurementClick(imagePoint);
+        measureStartRef.current = imagePoint;
         isMeasuringRef.current = true;
+        onMeasurementClick(imagePoint);
         setMousePosition(imagePoint); // Initialize preview position
         e.preventDefault();
         return;
@@ -259,16 +268,28 @@ export default function SliceViewer({
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const imagePoint = screenToImage(e.clientX, e.clientY);
 
+    // Dragging an existing measurement point (use ref for immediate response)
+    const activeDrag = draggingRef.current;
+    if (activeDrag && imagePoint && onMeasurementPointDrag) {
+      onMeasurementPointDrag(activeDrag.measurementId, activeDrag.pointKey, imagePoint);
+      return;
+    }
+
     // Track mouse position for measurement preview during drag
-    if (measurementMode === 'distance' && isMeasuringRef.current && draftPoints.length > 0) {
+    // Use measureStartRef (sync ref) instead of draftPoints.length (async prop)
+    // so preview works immediately before React re-renders with updated draftPoints
+    if (measurementMode === 'distance' && isMeasuringRef.current && measureStartRef.current) {
       setMousePosition(imagePoint);
     } else if (!isMeasuringRef.current) {
       setMousePosition(null);
     }
 
-    if (dragging && imagePoint && onMeasurementPointDrag) {
-      onMeasurementPointDrag(dragging.measurementId, dragging.pointKey, imagePoint);
-      return;
+    // Show grab cursor when hovering near a draggable measurement point
+    if (measurementMode === 'distance' && imagePoint && !isMeasuringRef.current) {
+      const nearby = findNearbyPoint(imagePoint);
+      setHoveringPoint(nearby !== null);
+    } else if (!isMeasuringRef.current) {
+      setHoveringPoint(false);
     }
 
     // Only handle crosshair dragging if mouse was pressed down on THIS canvas
@@ -280,10 +301,11 @@ export default function SliceViewer({
       const dataY = canvas.height - 1 - imagePoint.y;
       onCrosshairChange(imagePoint.x, dataY);
     }
-  }, [measurementMode, draftPoints.length, screenToImage, dragging, onMeasurementPointDrag, onCrosshairChange, showCrosshairs]);
+  }, [measurementMode, screenToImage, onMeasurementPointDrag, onCrosshairChange, showCrosshairs, findNearbyPoint]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     isMouseDownHereRef.current = false;
+    draggingRef.current = null;
     setDragging(null);
 
     // Complete measurement on mouse release
@@ -293,18 +315,22 @@ export default function SliceViewer({
         onMeasurementClick(imagePoint); // Second point completes the measurement
       }
       isMeasuringRef.current = false;
+      measureStartRef.current = null;
       setMousePosition(null);
     }
   }, [measurementMode, onMeasurementClick, screenToImage]);
 
   const handleMouseLeave = useCallback(() => {
     setMousePosition(null);
+    setHoveringPoint(false);
     // Don't reset isMouseDownHereRef here - only on mouseup
     // This allows dragging to continue if user briefly leaves and re-enters
+    draggingRef.current = null;
     setDragging(null);
     // Cancel measurement if user leaves canvas while measuring
     if (isMeasuringRef.current) {
       isMeasuringRef.current = false;
+      measureStartRef.current = null;
       onMeasurementCancel?.();
     }
   }, [onMeasurementCancel]);
@@ -387,7 +413,7 @@ export default function SliceViewer({
               width: '100%',
               height: '100%',
               objectFit: 'contain',
-              cursor: dragging ? 'grabbing' : (measurementMode !== 'off' ? 'crosshair' : (showCrosshairs ? 'crosshair' : 'default')),
+              cursor: dragging ? 'grabbing' : hoveringPoint ? 'grab' : (measurementMode !== 'off' ? 'crosshair' : (showCrosshairs ? 'crosshair' : 'default')),
               imageRendering: 'pixelated',
               background: '#000',
             }}
