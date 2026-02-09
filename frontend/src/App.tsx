@@ -153,7 +153,7 @@ export default function App() {
 
       console.log(`Upload complete. Study ID: ${studyId}. Connecting to WebSocket...`);
 
-      const backendUrl = (import.meta as any).env?.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:3000';
+      const backendUrl = 'http://localhost:3000';
       const socket = io(`${backendUrl}/progress`, {
         transports: ['websocket', 'polling'],
       });

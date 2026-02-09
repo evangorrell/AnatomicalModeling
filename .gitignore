@@ -34,12 +34,17 @@ downloaded_meshes/
 .vscode/
 .idea/
 *.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 
 # Build artifacts
 dist/
-orchestration/dist/
+dist-ssr/
 *.tsbuildinfo
 *.js.map
+*.local
 
 # Logs
 *.log
