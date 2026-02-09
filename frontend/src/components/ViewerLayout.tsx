@@ -43,7 +43,7 @@ export default function ViewerLayout({
   } | null>(null);
   const [zoomPercentage, setZoomPercentage] = useState(50);
 
-  // Keyboard listener for Cmd+Z undo
+  // Keyboard listener for Cmd+Z
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
@@ -98,7 +98,7 @@ export default function ViewerLayout({
       alignItems: 'center',
       minWidth: '800px',
     }}>
-      {/* Wrapper for header + viewer to share same width */}
+      {/* Wrapper for header & viewer to share same width */}
       <div style={{
         height: '100%',
         aspectRatio: '1',

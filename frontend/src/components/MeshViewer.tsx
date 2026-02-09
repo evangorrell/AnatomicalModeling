@@ -20,7 +20,7 @@ interface MeshViewerProps {
   stlFiles: { brain: string | null; tumor: string | null }; // For direct STL viewing
   meshState: MeshState;
   onZoomHandlersReady?: (handlers: { zoomIn: () => void; zoomOut: () => void; getCurrentZoom: () => number; setZoomDistance: (distance: number) => void }) => void;
-  onZoomChange?: (zoomDistance: number) => void; // Called when zoom changes (scroll, etc.)
+  onZoomChange?: (zoomDistance: number) => void;
   // Crosshair planes for quad-view
   crosshairPosition?: { x: number; y: number; z: number }; // Normalized -1 to 1
   showCrosshairPlanes?: boolean;
@@ -54,10 +54,10 @@ function MeshObject({ geometry, color, opacity, visible }: MeshObjectProps) {
   );
 }
 
-// Simple yellow crosshair lines for quad-view synchronization
+// Synchronized crosshair lines for quad-view
 interface CrosshairLinesProps {
   position: { x: number; y: number; z: number }; // Normalized -1 to 1
-  size: number; // Size of the lines
+  size: number;
 }
 
 function CrosshairLines({ position, size }: CrosshairLinesProps) {
@@ -77,7 +77,7 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
 
   return (
     <group key={posKey}>
-      {/* X-axis line (left-right) - yellow */}
+      {/* X-axis line */}
       <line>
         <bufferGeometry>
           <bufferAttribute
@@ -89,7 +89,7 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
         </bufferGeometry>
         <lineBasicMaterial color={color} transparent opacity={opacity} />
       </line>
-      {/* Y-axis line (up-down) - yellow */}
+      {/* Y-axis line */}
       <line>
         <bufferGeometry>
           <bufferAttribute
@@ -101,7 +101,7 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
         </bufferGeometry>
         <lineBasicMaterial color={color} transparent opacity={opacity} />
       </line>
-      {/* Z-axis line (front-back) - yellow */}
+      {/* Z-axis line */}
       <line>
         <bufferGeometry>
           <bufferAttribute
@@ -139,7 +139,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange
       stlFiles.brain,
       (geometry) => {
         geometry.computeVertexNormals();
-        // DON'T center yet - store raw geometry
+        // Store raw geometry
         setRawBrainGeometry(geometry);
       },
       undefined,
@@ -168,7 +168,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange
       stlFiles.tumor,
       (geometry) => {
         geometry.computeVertexNormals();
-        // DON'T center yet - store raw geometry
+        // Store raw geometry
         setRawTumorGeometry(geometry);
       },
       undefined,
@@ -205,23 +205,20 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange
     if (rawBrainGeometry && rawTumorGeometry && !hasVerifiedRef.current) {
       hasVerifiedRef.current = true;
 
-      const { shouldSwap, brainVolume, tumorVolume } = verifyAssignmentByVolume(
-        rawBrainGeometry,
-        rawTumorGeometry
-      );
+      const { shouldSwap, brainVolume, tumorVolume } = verifyAssignmentByVolume(rawBrainGeometry, rawTumorGeometry);
 
       if (shouldSwap) {
-        console.warn('⚠️ Volume analysis suggests brain/tumor assignment should be swapped!');
-        console.warn(`Current "brain" volume: ${brainVolume.toFixed(2)}, "tumor" volume: ${tumorVolume?.toFixed(2)}`);
+        console.warn('WARNING: Volume analysis suggests brain/tumor assignment should be swapped!');
+        console.warn(`Current brain volume: ${brainVolume.toFixed(2)}, tumor volume: ${tumorVolume?.toFixed(2)}`);
 
         // Swap the raw geometries (the centering effect will re-run)
         const tempBrain = rawBrainGeometry;
         setRawBrainGeometry(rawTumorGeometry);
         setRawTumorGeometry(tempBrain);
 
-        console.log('✅ Automatically swapped brain and tumor based on volume analysis');
+        console.log('Automatically swapped brain and tumor based on volume analysis');
       } else {
-        console.log('✅ Volume analysis confirms correct brain/tumor assignment');
+        console.log('Volume analysis confirms correct brain/tumor assignment');
         console.log(`Brain volume: ${brainVolume.toFixed(2)}, Tumor volume: ${tumorVolume?.toFixed(2)}`);
       }
     }
@@ -276,7 +273,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange
             return camera.position.distanceTo(target);
           },
           setZoomDistance: (distance: number) => {
-            // Set camera to specific distance (clamped)
+            // Set camera to specific distance
             const target = controls.target;
             const direction = new THREE.Vector3().subVectors(camera.position, target);
             const clampedDistance = Math.max(MIN_ZOOM_DISTANCE, Math.min(MAX_ZOOM_DISTANCE, distance));
@@ -298,7 +295,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange
 
   return (
     <>
-      {/* Camera - view from below (bottom of brain facing user), back at bottom, front at top, 63% zoom */}
+      {/* Camera - bottom of brain facing user, back at bottom, front at top, 63% zoom */}
       <PerspectiveCamera
         ref={cameraRef}
         makeDefault
@@ -320,7 +317,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange
       />
       <pointLight position={[0, 10, 0]} intensity={0.3} />
 
-      {/* Subtle grid floor */}
+      {/* Grid floor */}
       {showGrid && (
         <gridHelper
           args={[200, 20, '#3b8ebd', '#1e3a50']}
@@ -356,7 +353,7 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange
         </mesh>
       )}
 
-      {/* Crosshair lines for quad-view */}
+      {/* Crosshair lines */}
       {showCrosshairPlanes && crosshairPosition && (
         <CrosshairLines
           position={crosshairPosition}

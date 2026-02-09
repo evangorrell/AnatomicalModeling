@@ -68,7 +68,7 @@ export default function UploadPanel({
           letterSpacing: '2px',
           marginBottom: '24px',
         }}>
-          MRI TO 3D MESH PIPELINE
+          MRI TO 3D MODEL PIPELINE
         </div>
         <h2 style={{
           fontSize: '64px',
@@ -227,13 +227,6 @@ export default function UploadPanel({
                     </button>
                   </div>
                 ))}
-
-                {/* Info text */}
-                {hasNifti && !hasStl && (
-                  <div style={{ fontSize: '12px', color: 'hsl(var(--muted-foreground))', textAlign: 'center', marginTop: '8px' }}>
-                    Larger file → MRI image, smaller file → tumor labels (auto-detected)
-                  </div>
-                )}
               </div>
             )}
 
@@ -287,7 +280,7 @@ export default function UploadPanel({
                     cursor: 'pointer',
                   }}
                 >
-                  Generate 3D Mesh
+                  Generate 3D Model
                 </button>
               )}
               {canViewStlOnly && (
@@ -304,7 +297,7 @@ export default function UploadPanel({
                     cursor: 'pointer',
                   }}
                 >
-                  View 3D Mesh
+                  View 3D Model
                 </button>
               )}
               {canViewHybrid && (

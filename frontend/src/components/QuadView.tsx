@@ -6,10 +6,10 @@ import MeshViewer from './MeshViewer';
 import { MeshState } from '../types';
 import { MeasurementMode } from '../measurements/types';
 
-// Divider style for the "+" center divider
+// Divider style
 const DIVIDER = '2px solid white';
 
-// Helper component to wrap each quadrant with conditional inner borders
+// Helper component to wrap each quadrant with inner borders
 interface QuadCellProps {
   position: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
   children: ReactNode;
@@ -22,7 +22,7 @@ function QuadCell({ position, children }: QuadCellProps) {
     overflow: 'hidden',
   };
 
-  // Add inner borders based on position to create "+" divider
+  // Add inner borders
   if (position === 'topLeft') {
     borderStyles.borderRight = DIVIDER;
     borderStyles.borderBottom = DIVIDER;
@@ -31,7 +31,6 @@ function QuadCell({ position, children }: QuadCellProps) {
   } else if (position === 'bottomLeft') {
     borderStyles.borderRight = DIVIDER;
   }
-  // bottomRight has no borders
 
   return <div style={borderStyles}>{children}</div>;
 }
@@ -137,14 +136,14 @@ export default function QuadView({
   } | null>(null);
   const [zoomPercentage, setZoomPercentage] = useState(50);
 
-  // Chrome-like zoom steps (3% to 110%)
+  // Zoom steps
   const ZOOM_STEPS = [3, 10, 25, 33, 50, 67, 75, 80, 90, 100, 110];
   const MIN_ZOOM = 3;
   const MAX_ZOOM = 110;
 
-  // Convert percentage to camera distance: distance = 500 - (percentage / 100) * 450
+  // Convert percentage to camera distance
   const percentageToDistance = (pct: number) => 500 - (pct / 100) * 450;
-  // Convert distance to percentage: percentage = ((500 - distance) / 450) * 100
+  // Convert distance to percentage
   const distanceToPercentage = (dist: number) => Math.round(((500 - dist) / 450) * 100);
 
   const handleZoomIn = useCallback(() => {
@@ -201,7 +200,7 @@ export default function QuadView({
         borderRadius: '8px',
         flexShrink: 0,
       }}>
-        {/* Controls pill group */}
+        {/* Controls Pill Group */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -323,7 +322,7 @@ export default function QuadView({
         overflow: 'hidden',
         borderRadius: '8px',
       }}>
-      {/* Top Left: Axial (Red) */}
+      {/* Top Left: Axial */}
       <QuadCell position="topLeft">
         <SliceViewer
         volume={volume}
@@ -345,7 +344,7 @@ export default function QuadView({
         />
       </QuadCell>
 
-      {/* Top Right: 3D View (Blue) */}
+      {/* Top Right: 3D View */}
       <QuadCell position="topRight">
         <div style={{
           background: 'hsl(var(--card))',
@@ -474,7 +473,7 @@ export default function QuadView({
         </div>
       </QuadCell>
 
-      {/* Bottom Left: Coronal (Green) */}
+      {/* Bottom Left: Coronal */}
       <QuadCell position="bottomLeft">
         <SliceViewer
           volume={volume}
@@ -496,7 +495,7 @@ export default function QuadView({
         />
       </QuadCell>
 
-      {/* Bottom Right: Sagittal (Yellow) */}
+      {/* Bottom Right: Sagittal */}
       <QuadCell position="bottomRight">
         <SliceViewer
           volume={volume}

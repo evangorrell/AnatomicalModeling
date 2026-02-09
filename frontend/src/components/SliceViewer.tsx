@@ -3,8 +3,8 @@ import { NiftiVolume, getSlice } from '../hooks/useNiftiVolume';
 import MeasurementOverlay from './MeasurementOverlay';
 import { Point2D, Measurement, MeasurementMode, PlaneType } from '../measurements/types';
 
-// Shared constant for viewer header height
-export const VIEWER_HEADER_HEIGHT = 28; // px
+// Constant for viewer header height (px)
+export const VIEWER_HEADER_HEIGHT = 28;
 
 interface SliceViewerProps {
   volume: NiftiVolume;
@@ -53,16 +53,16 @@ export default function SliceViewer({
     measurementId: string;
     pointKey: 'A' | 'B';
   } | null>(null);
-  // Sync ref mirrors dragging state so handleMouseMove works immediately
+  // Sync ref mirrors dragging state
   const draggingRef = useRef<typeof dragging>(null);
-  // Whether cursor is hovering near a draggable measurement point
+
   const [hoveringPoint, setHoveringPoint] = useState(false);
 
-  // Track if mouse was pressed down on THIS canvas (to avoid capturing drags from other panels)
+  // Track if mouse was pressed
   const isMouseDownHereRef = useRef(false);
-  // Track if we're actively drawing a new measurement (click-drag interaction)
+  // Track if we're actively drawing a new measurement
   const isMeasuringRef = useRef(false);
-  // Start point for in-progress drag measurement (so preview works before draftPoints prop updates)
+  // Start point for in-progress drag measurement (so preview works)
   const measureStartRef = useRef<Point2D | null>(null);
 
   // Global mouseup listener to reset state when mouse is released anywhere
@@ -93,7 +93,7 @@ export default function SliceViewer({
     }
   }, [volume.dims, plane]);
 
-  // Render slice to canvas (image only, no crosshairs)
+  // Render slice to canvas
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !volume) return;
@@ -111,7 +111,7 @@ export default function SliceViewer({
     ctx.putImageData(imageData, 0, 0);
   }, [volume, plane, sliceIndex]);
 
-  // Draw crosshairs on overlay canvas - spans full pane
+  // Draw crosshairs on overlay canvas
   useEffect(() => {
     const canvas = canvasRef.current;
     const crosshairCanvas = crosshairCanvasRef.current;
@@ -165,18 +165,18 @@ export default function SliceViewer({
       const xAligned = Math.round(xCss) + 0.5;
       const yAligned = Math.round(yCss) + 0.5;
 
-      // Draw crosshairs - yellow with reduced opacity for less eye strain
-      ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
+      // Draw crosshairs 
+      ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)'; // Reduced opacity
       ctx.lineWidth = 0.8;
       ctx.lineCap = 'butt';
 
-      // Vertical line - full pane height
+      // Vertical line
       ctx.beginPath();
       ctx.moveTo(xAligned, 0);
       ctx.lineTo(xAligned, paneRect.height);
       ctx.stroke();
 
-      // Horizontal line - full pane width
+      // Horizontal line
       ctx.beginPath();
       ctx.moveTo(0, yAligned);
       ctx.lineTo(paneRect.width, yAligned);
@@ -229,7 +229,7 @@ export default function SliceViewer({
   }, [measurements]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Mark that mouse was pressed on THIS canvas
+    // Mark mouse was pressed
     isMouseDownHereRef.current = true;
 
     const imagePoint = screenToImage(e.clientX, e.clientY);
@@ -268,16 +268,14 @@ export default function SliceViewer({
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const imagePoint = screenToImage(e.clientX, e.clientY);
 
-    // Dragging an existing measurement point (use ref for immediate response)
+    // Dragging an existing measurement point
     const activeDrag = draggingRef.current;
     if (activeDrag && imagePoint && onMeasurementPointDrag) {
       onMeasurementPointDrag(activeDrag.measurementId, activeDrag.pointKey, imagePoint);
       return;
     }
 
-    // Track mouse position for measurement preview during drag
-    // Use measureStartRef (sync ref) instead of draftPoints.length (async prop)
-    // so preview works immediately before React re-renders with updated draftPoints
+    // Track mouse position for measurement preview
     if (measurementMode === 'distance' && isMeasuringRef.current && measureStartRef.current) {
       setMousePosition(imagePoint);
     } else if (!isMeasuringRef.current) {
@@ -292,8 +290,7 @@ export default function SliceViewer({
       setHoveringPoint(false);
     }
 
-    // Only handle crosshair dragging if mouse was pressed down on THIS canvas
-    // This prevents capturing drags that started in other panels (like 3D view)
+    // Only handle crosshair dragging if mouse was pressed on this canvas
     // Also only allow if crosshairs are enabled
     if (e.buttons === 1 && measurementMode === 'off' && isMouseDownHereRef.current && showCrosshairs) {
       const canvas = canvasRef.current;
@@ -312,7 +309,7 @@ export default function SliceViewer({
     if (isMeasuringRef.current && measurementMode === 'distance' && onMeasurementClick) {
       const imagePoint = screenToImage(e.clientX, e.clientY);
       if (imagePoint) {
-        onMeasurementClick(imagePoint); // Second point completes the measurement
+        onMeasurementClick(imagePoint);
       }
       isMeasuringRef.current = false;
       measureStartRef.current = null;
@@ -323,8 +320,6 @@ export default function SliceViewer({
   const handleMouseLeave = useCallback(() => {
     setMousePosition(null);
     setHoveringPoint(false);
-    // Don't reset isMouseDownHereRef here - only on mouseup
-    // This allows dragging to continue if user briefly leaves and re-enters
     draggingRef.current = null;
     setDragging(null);
     // Cancel measurement if user leaves canvas while measuring
@@ -386,7 +381,7 @@ export default function SliceViewer({
         </div>
       </div>
 
-      {/* Canvas container (the pane) */}
+      {/* Canvas container */}
       <div
         ref={canvasContainerRef}
         style={{
@@ -431,7 +426,7 @@ export default function SliceViewer({
           />
         </div>
 
-        {/* Crosshair overlay - fills entire pane, on top of image */}
+        {/* Crosshair overlay */}
         <canvas
           ref={crosshairCanvasRef}
           style={{

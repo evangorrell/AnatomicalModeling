@@ -14,8 +14,8 @@ export default function ContactForm() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Contact form submitted:', formData);
-    alert('Message sent! (Demo - not actually sent)');
+    console.log('Contact form submitted:', formData);  // dev
+    alert('Message sent! (Demo - not actually sent)'); // dev
     setFormData({ name: '', email: '', message: '' });
   };
 
