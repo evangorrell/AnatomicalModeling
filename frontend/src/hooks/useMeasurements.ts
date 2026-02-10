@@ -48,7 +48,7 @@ export function useMeasurements({ measurementMode, pixDims, clearKey, undoKey }:
           }
         }
 
-        // Otherwise, remove the most recent measurement (by createdAt)
+        // Otherwise, remove the most recent measurement
         let latestPanel: PlaneType | null = null;
         let latestTime = 0;
 
@@ -78,7 +78,7 @@ export function useMeasurements({ measurementMode, pixDims, clearKey, undoKey }:
     }
   }, [undoKey]);
 
-  // Place a point (first click = draft, second click = finalize)
+  // Place a point
   const handleClick = useCallback((panel: PlaneType, point: Point2D) => {
     if (measurementMode === 'off') return;
 

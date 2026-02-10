@@ -28,12 +28,12 @@ export function useMeshes(studyId: string | null): UseMeshesResult {
     error: null,
   });
 
-  // Store raw (uncentered) geometries
+  // Store raw geometries
   const rawBrainRef = useRef<THREE.BufferGeometry | null>(null);
   const rawTumorRef = useRef<THREE.BufferGeometry | null>(null);
   const hasCenteredRef = useRef(false);
 
-  // Center both meshes together using brain as reference
+  // Center both meshes together using brain as reference for tumor
   const centerMeshesTogether = () => {
     const rawBrain = rawBrainRef.current;
     if (!rawBrain) return;
@@ -82,14 +82,13 @@ export function useMeshes(studyId: string | null): UseMeshesResult {
         loader.load(
           objectUrl,
           (geometry) => {
-            // Compute normals but DON'T center yet
+            // Compute normals
             geometry.computeVertexNormals();
 
             // Store raw geometry
             rawBrainRef.current = geometry;
 
             // Try to center if we have both, or just brain if tumor doesn't exist
-            // We'll wait a bit for tumor to load first
             setTimeout(() => {
               if (!hasCenteredRef.current && rawBrainRef.current) {
                 centerMeshesTogether();
@@ -120,14 +119,14 @@ export function useMeshes(studyId: string | null): UseMeshesResult {
         });
       });
 
-    // Load tumor mesh (may not exist for all studies)
+    // Load tumor mesh, if available
     setTumor(prev => ({ ...prev, loading: true, error: null }));
     const tumorUrl = getMeshUrl(studyId, 'tumor.stl');
 
     fetch(tumorUrl)
       .then(response => {
         if (!response.ok) {
-          // If tumor doesn't exist (404), that's okay - just don't load it
+          // If tumor doesn't exist, don't load it
           if (response.status === 404) {
             console.log('No tumor mesh found for this study');
             setTumor({
@@ -149,13 +148,13 @@ export function useMeshes(studyId: string | null): UseMeshesResult {
         loader.load(
           objectUrl,
           (geometry) => {
-            // Compute normals but DON'T center yet
+            // Compute normals but
             geometry.computeVertexNormals();
 
             // Store raw geometry
             rawTumorRef.current = geometry;
 
-            // Center both together now that tumor is loaded
+            // Center both together
             if (rawBrainRef.current && !hasCenteredRef.current) {
               centerMeshesTogether();
             }

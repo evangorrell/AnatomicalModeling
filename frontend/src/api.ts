@@ -5,7 +5,7 @@ const API_BASE_URL = 'http://localhost:3000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 600000, // 10 minutes for mesh generation
+  timeout: 1200000, // 20 minutes max for mesh generation
 });
 
 export const uploadNiftiWithLabels = async (imageFile: File, labelsFile: File): Promise<UploadResponse> => {
@@ -29,7 +29,7 @@ export const getMeshUrl = (studyId: string, filename: string): string => {
 export const downloadMesh = async (studyId: string, filename: string): Promise<void> => {
   const url = getMeshUrl(studyId, filename);
 
-  // Fetch the blob
+  // Fetch the blob (Binary Large Object - raw binary content of the STL mesh fetched from the backend)
   const response = await fetch(url);
   const blob = await response.blob();
 

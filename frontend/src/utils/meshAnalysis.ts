@@ -1,3 +1,5 @@
+// Used to analyze mesh properties when users upload STL files to view
+
 import * as THREE from 'three';
 
 /**
@@ -6,7 +8,7 @@ import * as THREE from 'three';
 export function analyzeFilename(filename: string): 'tumor' | 'healthy' | 'unknown' {
   const lower = filename.toLowerCase();
 
-  // Tumor indicators (more specific patterns first)
+  // Tumor indicators
   const tumorKeywords = [
     'tumor', 'tumour', 'lesion', 'mass', 'neoplasm',
     'glioma', 'glioblastoma', 'astrocytoma', 'meningioma',
@@ -26,39 +28,12 @@ export function analyzeFilename(filename: string): 'tumor' | 'healthy' | 'unknow
     'normal', 'healthy', 'skull'
   ];
 
-  // Check if filename contains BOTH tumor and healthy keywords
-  let hasTumorKeyword = false;
-  let hasHealthyKeyword = false;
+  const hasTumorKeyword = tumorKeywords.some(k => lower.includes(k));                                                                                                                                                       
+  const hasHealthyKeyword = healthyKeywords.some(k => lower.includes(k));         
 
-  for (const keyword of tumorKeywords) {
-    if (lower.includes(keyword)) {
-      hasTumorKeyword = true;
-      break;
-    }
-  }
-
-  for (const keyword of healthyKeywords) {
-    if (lower.includes(keyword)) {
-      hasHealthyKeyword = true;
-      break;
-    }
-  }
-
-  // If both types of keywords are present, it's ambiguous
-  if (hasTumorKeyword && hasHealthyKeyword) {
-    return 'unknown';
-  }
-
-  // Check tumor keywords
-  if (hasTumorKeyword) {
-    return 'tumor';
-  }
-
-  // Check healthy tissue keywords
-  if (hasHealthyKeyword) {
-    return 'healthy';
-  }
-
+  if (hasTumorKeyword && hasHealthyKeyword) return 'unknown';
+  if (hasTumorKeyword) return 'tumor';
+  if (hasHealthyKeyword) return 'healthy';
   return 'unknown';
 }
 
@@ -141,7 +116,7 @@ export async function detectBrainAndTumor(
   }
 
   if (files.length === 1) {
-    // Single file - classify by filename, don't assume it's brain
+    // Single file - classify by filename
     const classification = classifySingleFile(files[0]);
 
     if (classification.role === 'brain') {
@@ -188,7 +163,7 @@ export async function detectBrainAndTumor(
   }
 
   // Filename analysis inconclusive - fall back to file size as proxy
-  // (We'll calculate actual volume after loading, but use size for initial assignment)
+  // We'll calculate actual volume after loading, but use file size for initial assignment
   console.log('Filename analysis inconclusive, falling back to file size');
   const sortedBySize = [...files].sort((a, b) => b.size - a.size);
 

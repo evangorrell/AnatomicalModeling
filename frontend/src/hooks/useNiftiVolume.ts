@@ -56,7 +56,7 @@ export function useNiftiVolume(file: File | null): UseNiftiVolumeResult {
         // Read image data
         const imageData = nifti.readImage(header, data);
 
-        // Get dimensions (first 3 dims, ignore time if 4D)
+        // Get dimensions (ignore time if 4D)
         const dims: [number, number, number] = [
           header.dims[1],
           header.dims[2],
@@ -84,12 +84,10 @@ export function useNiftiVolume(file: File | null): UseNiftiVolumeResult {
             typedData = new Float32Array(imageData);
             break;
           case nifti.NIFTI1.TYPE_FLOAT64:
-            // Convert float64 to float32
             const float64 = new Float64Array(imageData);
             typedData = new Float32Array(float64);
             break;
           default:
-            // Default to int16
             typedData = new Int16Array(imageData);
         }
 
@@ -157,7 +155,7 @@ export function getSlice(
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const srcIdx = x + y * dimX + z * dimX * dimY;
-        const dstIdx = (x + (height - 1 - y) * width) * 4; // Flip Y for display
+        const dstIdx = (x + (height - 1 - y) * width) * 4; // Flip Y for display - necessary for NifTI & HTML Canvas mismatch
         const val = Math.round(((data[srcIdx] - min) / range) * 255);
         sliceArray[dstIdx] = val;
         sliceArray[dstIdx + 1] = val;
@@ -175,7 +173,7 @@ export function getSlice(
     for (let z = 0; z < height; z++) {
       for (let x = 0; x < width; x++) {
         const srcIdx = x + y * dimX + z * dimX * dimY;
-        const dstIdx = (x + (height - 1 - z) * width) * 4; // Flip Z for display
+        const dstIdx = (x + (height - 1 - z) * width) * 4; // Flip Z for display - necessary for NifTI & HTML Canvas mismatch
         const val = Math.round(((data[srcIdx] - min) / range) * 255);
         sliceArray[dstIdx] = val;
         sliceArray[dstIdx + 1] = val;
@@ -184,7 +182,7 @@ export function getSlice(
       }
     }
   } else {
-    // sagittal: Y-Z plane at slice X
+    // Sagittal: Y-Z plane at slice X
     width = dimY;
     height = dimZ;
     sliceArray = new Array(width * height * 4);
@@ -193,7 +191,7 @@ export function getSlice(
     for (let z = 0; z < height; z++) {
       for (let y = 0; y < width; y++) {
         const srcIdx = x + y * dimX + z * dimX * dimY;
-        const dstIdx = (y + (height - 1 - z) * width) * 4; // Flip Z for display
+        const dstIdx = (y + (height - 1 - z) * width) * 4; // Flip Z for display - necessary for NifTI & HTML Canvas mismatch
         const val = Math.round(((data[srcIdx] - min) / range) * 255);
         sliceArray[dstIdx] = val;
         sliceArray[dstIdx + 1] = val;

@@ -2,10 +2,8 @@
 
 import { Point2D, PlaneType } from './types';
 
-/**
- * Get the pixel spacing for a given plane orientation
- * spacing is [sx, sy, sz] in mm per voxel
- */
+// Get the pixel spacing for a given plane orientation
+// spacing is [sx, sy, sz] in mm per voxel
 export function getSpacingForPlane(
   plane: PlaneType,
   spacing: [number, number, number]
@@ -21,9 +19,7 @@ export function getSpacingForPlane(
   }
 }
 
-/**
- * Calculate distance in mm between two points in image pixel coordinates
- */
+// Calculate distance in mm between two points in image pixel coordinates
 export function calculateDistanceMm(
   A: Point2D,
   B: Point2D,
@@ -36,9 +32,7 @@ export function calculateDistanceMm(
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-/**
- * Generate unique ID for measurements
- */
+// Generate unique ID for measurements
 export function generateMeasurementId(): string {
   return `m_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }

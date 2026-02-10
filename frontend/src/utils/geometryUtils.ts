@@ -1,8 +1,6 @@
 import * as THREE from 'three';
 
-/**
- * Compute the bounding-box center of a geometry.
- */
+// Compute the bounding-box center of a geometry.
 export function computeGeometryCenter(geometry: THREE.BufferGeometry): THREE.Vector3 {
   geometry.computeBoundingBox();
   const center = new THREE.Vector3();
@@ -10,10 +8,8 @@ export function computeGeometryCenter(geometry: THREE.BufferGeometry): THREE.Vec
   return center;
 }
 
-/**
- * Clone a geometry and translate it so that `center` maps to the origin.
- * Used to co-center brain + tumor meshes using a shared reference point.
- */
+// Clone a geometry and translate it so that center maps to the origin.
+// Used to co-center brain + tumor meshes using a shared reference point.
 export function centerGeometry(
   geometry: THREE.BufferGeometry,
   center: THREE.Vector3,

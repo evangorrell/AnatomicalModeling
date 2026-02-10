@@ -31,7 +31,7 @@ export default function App() {
 
   const [niftiFileForViewer, setNiftiFileForViewer] = useState<File | null>(null);
 
-  // Load mesh data to check if tumor exists (only for generated meshes)
+  // Load mesh data to check if tumor exists
   const { tumor } = useMeshes(currentStudyId);
 
   // Load NIfTI volume for quad-view
@@ -59,7 +59,7 @@ export default function App() {
     setProgressMessage('');
   };
 
-  /** Sort NIfTI files by size descending — larger = MRI image, smaller = labels */
+  // Sort NIfTI files by size descending — larger = MRI image, smaller = labels
   const getSortedNifti = () => [...uploadedFiles.nifti].sort((a, b) => b.size - a.size);
 
   // Cleanup WebSocket on unmount
@@ -121,11 +121,11 @@ export default function App() {
     const totalStl = uploadedFiles.stl.length + newStlFiles.length;
 
     if (totalNifti > 2) {
-      setError('Maximum 2 NIfTI files allowed.');
+      setError('Maximum 2 NIfTI files allowed.'); // image and label
       return;
     }
     if (totalStl > 2) {
-      setError('Maximum 2 STL files allowed.');
+      setError('Maximum 2 STL files allowed.'); // brain and tumor
       return;
     }
 
