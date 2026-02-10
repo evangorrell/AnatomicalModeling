@@ -47,7 +47,7 @@ export class Model {
   format: string; // stl, obj, ply, glb, nii.gz
 
   @Column({ type: 'jsonb', nullable: true })
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 
   @CreateDateColumn()
   createdAt: Date;

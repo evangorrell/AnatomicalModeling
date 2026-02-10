@@ -21,23 +21,23 @@ export class ProgressGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   private logger = new Logger(ProgressGateway.name);
 
-  handleConnection(client: Socket) {
+  handleConnection(client: Socket): void {
     this.logger.log(`Client connected: ${client.id}`);
   }
 
-  handleDisconnect(client: Socket) {
+  handleDisconnect(client: Socket): void {
     this.logger.log(`Client disconnected: ${client.id}`);
   }
 
   @SubscribeMessage('subscribe')
-  handleSubscribe(client: Socket, studyId: string) {
+  handleSubscribe(client: Socket, studyId: string): { event: string; data: { studyId: string } } {
     client.join(`study:${studyId}`);
     this.logger.log(`Client ${client.id} subscribed to study ${studyId}`);
     return { event: 'subscribed', data: { studyId } };
   }
 
   @SubscribeMessage('unsubscribe')
-  handleUnsubscribe(client: Socket, studyId: string) {
+  handleUnsubscribe(client: Socket, studyId: string): { event: string; data: { studyId: string } } {
     client.leave(`study:${studyId}`);
     this.logger.log(`Client ${client.id} unsubscribed from study ${studyId}`);
     return { event: 'unsubscribed', data: { studyId } };
@@ -46,7 +46,7 @@ export class ProgressGateway implements OnGatewayConnection, OnGatewayDisconnect
   /**
    * Emit progress update to all clients subscribed to a study
    */
-  emitProgress(studyId: string, progress: ProgressUpdate) {
+  emitProgress(studyId: string, progress: ProgressUpdate): void {
     this.server.to(`study:${studyId}`).emit('progress', progress);
     this.logger.debug(`Progress update for study ${studyId}: ${progress.percentage}% - ${progress.stage}`);
   }
@@ -54,7 +54,7 @@ export class ProgressGateway implements OnGatewayConnection, OnGatewayDisconnect
   /**
    * Emit completion event
    */
-  emitComplete(studyId: string, result: any) {
+  emitComplete(studyId: string, result: { studyId: string; status: string; meshes: string[] }): void {
     this.server.to(`study:${studyId}`).emit('complete', result);
     this.logger.log(`Study ${studyId} completed`);
   }
@@ -62,7 +62,7 @@ export class ProgressGateway implements OnGatewayConnection, OnGatewayDisconnect
   /**
    * Emit error event
    */
-  emitError(studyId: string, error: { message: string; details?: any }) {
+  emitError(studyId: string, error: { message: string; details?: unknown }): void {
     this.server.to(`study:${studyId}`).emit('error', error);
     this.logger.error(`Study ${studyId} error: ${error.message}`);
   }

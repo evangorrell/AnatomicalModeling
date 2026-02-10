@@ -45,7 +45,7 @@ export class StudiesProcessor extends WorkerHost {
     });
   }
 
-  async process(job: Job<ProcessNiftiJobData>): Promise<any> {
+  async process(job: Job<ProcessNiftiJobData>): Promise<{ studyId: string; status: string }> {
     const { studyId, s3Key, filename, labelsS3Key, useLabels } = job.data;
     this.logger.log(`Processing study ${studyId}${useLabels ? ' (with ground truth labels)' : ''}`);
 
@@ -160,8 +160,9 @@ export class StudiesProcessor extends WorkerHost {
       fs.rmSync(tempDir, { recursive: true, force: true });
 
       return { studyId, status: 'completed' };
-    } catch (error) {
-      this.logger.error(`Study ${studyId} processing failed: ${error.message}`, error.stack);
+    } catch (error: unknown) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.logger.error(`Study ${studyId} processing failed: ${err.message}`, err.stack);
 
       // Cleanup on error
       if (fs.existsSync(tempDir)) {
@@ -170,11 +171,11 @@ export class StudiesProcessor extends WorkerHost {
 
       // Emit error event
       this.progressGateway.emitError(studyId, {
-        message: error.message,
-        details: error.stack,
+        message: err.message,
+        details: err.stack,
       });
 
-      throw error;
+      throw err;
     }
   }
 
@@ -198,7 +199,7 @@ export class StudiesProcessor extends WorkerHost {
       .promise();
   }
 
-  private async runSegmentation(studyId: string, niftiPath: string, outputDir: string, labelsPath?: string | null): Promise<any> {
+  private async runSegmentation(studyId: string, niftiPath: string, outputDir: string, labelsPath?: string | null): Promise<Record<string, unknown>> {
     const pythonPath = this.configService.get('WORKER_PYTHON_PATH', 'python3');
     const workerDir = path.resolve(process.cwd(), '../imaging-worker');
     const args = ['-m', 'src.cli', 'segment', niftiPath, outputDir];
@@ -233,7 +234,7 @@ export class StudiesProcessor extends WorkerHost {
     return JSON.parse(fs.readFileSync(segMetadataPath, 'utf-8'));
   }
 
-  private async runMeshGeneration(studyId: string, maskPath: string, meshDir: string): Promise<any> {
+  private async runMeshGeneration(studyId: string, maskPath: string, meshDir: string): Promise<Record<string, unknown> | null> {
     const pythonPath = this.configService.get('WORKER_PYTHON_PATH', 'python3');
     const workerDir = path.resolve(process.cwd(), '../imaging-worker');
     const args = ['-m', 'src.cli', 'mesh', maskPath, meshDir, '--formats', 'stl,obj', '--step-size', '1'];

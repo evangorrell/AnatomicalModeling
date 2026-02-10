@@ -9,6 +9,7 @@ import {
   BadRequestException,
   Res,
   Query,
+  Logger,
 } from '@nestjs/common';
 import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
@@ -18,6 +19,8 @@ import type { Response } from 'express';
 @ApiTags('studies')
 @Controller('studies')
 export class StudiesController {
+  private readonly logger = new Logger(StudiesController.name);
+
   constructor(private readonly studiesService: StudiesService) {}
 
   @Post('upload')
@@ -97,8 +100,8 @@ export class StudiesController {
       throw new BadRequestException('Both image and labels files are required');
     }
 
-    let file1 = files.image[0];
-    let file2 = files.labels[0];
+    const file1 = files.image[0];
+    const file2 = files.labels[0];
 
     // Validate file types
     const isFile1Nifti = file1.originalname.endsWith('.nii.gz') || file1.originalname.endsWith('.nii');
@@ -121,7 +124,7 @@ export class StudiesController {
       labelsFile = file1;
     }
 
-    console.log(`File assignment by size: Image="${imageFile.originalname}" (${(imageFile.size / 1024 / 1024).toFixed(2)} MB), Labels="${labelsFile.originalname}" (${(labelsFile.size / 1024).toFixed(2)} KB)`);
+    this.logger.log(`File assignment by size: Image="${imageFile.originalname}" (${(imageFile.size / 1024 / 1024).toFixed(2)} MB), Labels="${labelsFile.originalname}" (${(labelsFile.size / 1024).toFixed(2)} KB)`);
 
     const { study, jobId } = await this.studiesService.processUploadWithLabels(imageFile, labelsFile);
 
@@ -165,7 +168,7 @@ export class StudiesController {
   ) {
     const study = await this.studiesService.findById(id);
     const s3Key = study.s3Key;
-    const filename = study.metadata?.filename || 'original.nii.gz';
+    const filename = (study.metadata?.filename as string) || 'original.nii.gz';
 
     if (info === 'true') {
       const url = await this.studiesService.getSignedUrl(s3Key);
@@ -179,8 +182,9 @@ export class StudiesController {
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('Content-Length', s3Object.ContentLength || 0);
       res.send(s3Object.Body);
-    } catch (error) {
-      throw new BadRequestException(`Failed to download file: ${error.message}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(`Failed to download file: ${message}`);
     }
   }
 
@@ -211,8 +215,9 @@ export class StudiesController {
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('Content-Length', s3Object.ContentLength || 0);
       res.send(s3Object.Body);
-    } catch (error) {
-      throw new BadRequestException(`Failed to download volume: ${error.message}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(`Failed to download volume: ${message}`);
     }
   }
 
@@ -243,8 +248,9 @@ export class StudiesController {
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('Content-Length', s3Object.ContentLength || 0);
       res.send(s3Object.Body);
-    } catch (error) {
-      throw new BadRequestException(`Mask not found or download failed: ${error.message}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(`Mask not found or download failed: ${message}`);
     }
   }
 
@@ -294,8 +300,9 @@ export class StudiesController {
 
       // Stream the file
       res.send(s3Object.Body);
-    } catch (error) {
-      throw new BadRequestException(`Failed to download mesh file: ${error.message}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(`Failed to download mesh file: ${message}`);
     }
   }
 }

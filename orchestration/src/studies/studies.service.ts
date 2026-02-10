@@ -166,7 +166,7 @@ export class StudiesService {
   }
 
   async getSignedUrl(s3Key: string, expiresIn = 3600): Promise<string> {
-    const params: any = {
+    const params: { Bucket: string; Key: string; Expires: number } = {
       Bucket: this.configService.get('S3_BUCKET'),
       Key: s3Key,
       Expires: expiresIn,
@@ -187,7 +187,7 @@ export class StudiesService {
     return this.s3.getObject(params).promise();
   }
 
-  async getArtifactUrls(studyId: string): Promise<{ studyId: string; artifacts: Record<string, string>; metadata: any }> {
+  async getArtifactUrls(studyId: string): Promise<{ studyId: string; artifacts: Record<string, string>; metadata: Record<string, unknown> | null }> {
     const study = await this.findById(studyId);
     const bucket = this.configService.get('S3_BUCKET');
 
@@ -208,8 +208,8 @@ export class StudiesService {
     try {
       await this.s3.headObject({ Bucket: bucket, Key: maskKey }).promise();
       artifacts.mask = await this.getSignedUrl(maskKey);
-    } catch (e) {
-      // Mask doesn't exist
+    } catch (_e: unknown) {
+      // Mask doesn't exist in S3 — expected for studies without segmentation
     }
 
     // Check for isotropic volume
@@ -217,8 +217,8 @@ export class StudiesService {
     try {
       await this.s3.headObject({ Bucket: bucket, Key: isotropicKey }).promise();
       artifacts.volume_isotropic = await this.getSignedUrl(isotropicKey);
-    } catch (e) {
-      // Isotropic volume doesn't exist
+    } catch (_e: unknown) {
+      // Isotropic volume doesn't exist in S3 — expected
     }
 
     return {
@@ -240,7 +240,7 @@ export class StudiesService {
     switch (type) {
       case 'original':
         s3Key = study.s3Key;
-        filename = study.metadata?.filename || 'original.nii.gz';
+        filename = (study.metadata?.filename as string) || 'original.nii.gz';
         break;
       case 'volume':
         s3Key = study.volumeS3Key;
@@ -257,7 +257,7 @@ export class StudiesService {
               Key: s3Key,
             })
             .promise();
-        } catch (e) {
+        } catch (_e: unknown) {
           throw new NotFoundException('Mask not found for this study');
         }
         break;
@@ -267,7 +267,7 @@ export class StudiesService {
     return { url, filename };
   }
 
-  async listMeshes(studyId: string): Promise<{ meshes: string[]; metadata: any }> {
+  async listMeshes(studyId: string): Promise<{ meshes: string[]; metadata: Record<string, unknown> | null }> {
     const study = await this.findById(studyId);
     const bucket = this.configService.get('S3_BUCKET');
     const prefix = `studies/${studyId}/meshes/`;
@@ -283,7 +283,7 @@ export class StudiesService {
     const meshes = (response.Contents || []).map((obj) => obj.Key.replace(prefix, ''));
 
     // Get mesh metadata if available
-    const meshMetadata = study.metadata?.segmentation?.meshes || null;
+    const meshMetadata = (study.metadata?.segmentation as Record<string, unknown> | undefined)?.meshes as Record<string, unknown> | null ?? null;
 
     return {
       meshes,
@@ -300,7 +300,7 @@ export class StudiesService {
     // Verify file exists
     try {
       await this.s3.headObject({ Bucket: bucket, Key: s3Key }).promise();
-    } catch (e) {
+    } catch (_e: unknown) {
       throw new NotFoundException(`Mesh file not found: ${filename}`);
     }
 

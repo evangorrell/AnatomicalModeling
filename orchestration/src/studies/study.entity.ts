@@ -26,7 +26,7 @@ export class Study {
   seriesDescription: string;
 
   @Column({ type: 'jsonb', nullable: true })
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 
   @Column()
   s3Key: string; // Path to ZIP file in S3

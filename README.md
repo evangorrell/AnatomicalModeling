@@ -101,7 +101,19 @@ cd AnatomicalModeling
 cd infra
 docker-compose up -d
 cd ..
+
+# Other useful commands:
+# docker-compose down        # Stop services
+# docker-compose down -v     # Stop and remove all data
+# docker-compose logs -f     # View logs
+# docker-compose ps          # Check health status
 ```
+
+**Service endpoints:**
+- PostgreSQL: `postgresql://postgres:postgres@localhost:5432/dicom_pipeline`
+- Redis: `redis://localhost:6379`
+- MinIO API: `http://localhost:9000`
+- MinIO Console: `http://localhost:9001` (minioadmin / minioadmin)
 
 ### 2. Setup Python Imaging Worker
 
