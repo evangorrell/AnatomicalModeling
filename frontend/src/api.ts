@@ -13,7 +13,7 @@ export const uploadNiftiWithLabels = async (imageFile: File, labelsFile: File): 
   formData.append('image', imageFile);
   formData.append('labels', labelsFile);
 
-  const response = await api.post<UploadResponse>('/studies/upload-with-labels', formData, {
+  const response = await api.post<UploadResponse>('/studies/upload', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },

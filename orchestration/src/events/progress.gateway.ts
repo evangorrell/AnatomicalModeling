@@ -43,25 +43,19 @@ export class ProgressGateway implements OnGatewayConnection, OnGatewayDisconnect
     return { event: 'unsubscribed', data: { studyId } };
   }
 
-  /**
-   * Emit progress update to all clients subscribed to a study
-   */
+  // Emit progress update to all clients subscribed to a study
   emitProgress(studyId: string, progress: ProgressUpdate): void {
     this.server.to(`study:${studyId}`).emit('progress', progress);
     this.logger.debug(`Progress update for study ${studyId}: ${progress.percentage}% - ${progress.stage}`);
   }
 
-  /**
-   * Emit completion event
-   */
+  // Emit completion event
   emitComplete(studyId: string, result: { studyId: string; status: string; meshes: string[] }): void {
     this.server.to(`study:${studyId}`).emit('complete', result);
     this.logger.log(`Study ${studyId} completed`);
   }
 
-  /**
-   * Emit error event
-   */
+  // Emit error event
   emitError(studyId: string, error: { message: string; details?: unknown }): void {
     this.server.to(`study:${studyId}`).emit('error', error);
     this.logger.error(`Study ${studyId} error: ${error.message}`);

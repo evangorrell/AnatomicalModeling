@@ -31,58 +31,7 @@ export class StudiesService {
   }
 
   /**
-   * Upload file and queue processing job
-   */
-  async processUpload(file: Express.Multer.File): Promise<{ study: Study; jobId: string }> {
-    const studyId = uuidv4();
-    const s3Key = `studies/${studyId}/original.nii.gz`;
-
-    // Upload NIfTI to S3
-    await this.s3
-      .upload({
-        Bucket: this.configService.get('S3_BUCKET'),
-        Key: s3Key,
-        Body: file.buffer,
-        ContentType: 'application/gzip',
-      })
-      .promise();
-
-    // Create study record with pending status
-    const study = this.studyRepository.create({
-      id: studyId,
-      modality: 'MR',
-      seriesDescription: 'NIfTI Upload',
-      metadata: {
-        source: 'nifti_upload',
-        filename: file.originalname,
-        status: 'pending',
-      },
-      s3Key,
-      volumeS3Key: s3Key,
-    });
-
-    await this.studyRepository.save(study);
-
-    // Queue processing job with extended timeout for mesh generation
-    const job = await this.studiesQueue.add('process-nifti', {
-      studyId,
-      s3Key,
-      filename: file.originalname,
-    }, {
-      attempts: 2, // Retry once on failure
-      backoff: {
-        type: 'exponential',
-        delay: 5000,
-      },
-      removeOnComplete: 100, // Keep last 100 completed jobs
-      removeOnFail: 50, // Keep last 50 failed jobs
-    });
-
-    return { study, jobId: job.id as string };
-  }
-
-  /**
-   * Upload image + labels files and queue processing job
+   * Upload image and labels files and queue processing job
    * Labels file contains ground truth tumor segmentation
    */
   async processUploadWithLabels(

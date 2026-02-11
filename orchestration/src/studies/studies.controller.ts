@@ -4,14 +4,13 @@ import {
   Get,
   Param,
   UseInterceptors,
-  UploadedFile,
   UploadedFiles,
   BadRequestException,
   Res,
   Query,
   Logger,
 } from '@nestjs/common';
-import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { StudiesService } from './studies.service';
 import type { Response } from 'express';
@@ -25,50 +24,8 @@ export class StudiesController {
 
   @Post('upload')
   @ApiOperation({
-    summary: 'Upload NIfTI file',
-    description: 'Upload NIfTI volume (.nii.gz) for automatic segmentation and 3D mesh generation.'
-  })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-          description: 'NIfTI file (.nii.gz or .nii)',
-        },
-      },
-    },
-  })
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadNifti(@UploadedFile() file: Express.Multer.File) {
-    if (!file) {
-      throw new BadRequestException('No file uploaded');
-    }
-
-    // Only accept NIfTI files
-    const isNifti = file.originalname.endsWith('.nii.gz') || file.originalname.endsWith('.nii');
-
-    if (!isNifti) {
-      throw new BadRequestException('File must be a NIfTI volume (.nii.gz or .nii)');
-    }
-
-    const { study, jobId } = await this.studiesService.processUpload(file);
-
-    return {
-      studyId: study.id,
-      jobId,
-      message: 'NIfTI volume uploaded successfully. Processing started.',
-      fileType: 'nifti',
-      status: 'processing',
-    };
-  }
-
-  @Post('upload-with-labels')
-  @ApiOperation({
-    summary: 'Upload NIfTI image with ground truth labels',
-    description: 'Upload both the MRI image (.nii.gz) and ground truth label file for accurate tumor visualization. The label file contains the tumor segmentation.'
+    summary: 'Upload MRI image and segmentation labels',
+    description: 'Upload an MRI image (.nii.gz) and a ground-truth label file (.nii.gz). The pipeline segments the brain from the image, extracts the tumor from the labels, generates 3D meshes (STL/OBJ) for both, and streams progress via WebSocket.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -83,7 +40,7 @@ export class StudiesController {
         labels: {
           type: 'string',
           format: 'binary',
-          description: 'Ground truth label file (.nii.gz) - tumor segmentation',
+          description: 'Ground truth tumor label file (.nii.gz)',
         },
       },
       required: ['image', 'labels'],
@@ -93,7 +50,7 @@ export class StudiesController {
     { name: 'image', maxCount: 1 },
     { name: 'labels', maxCount: 1 },
   ]))
-  async uploadWithLabels(
+  async upload(
     @UploadedFiles() files: { image?: Express.Multer.File[], labels?: Express.Multer.File[] }
   ) {
     if (!files.image?.[0] || !files.labels?.[0]) {
@@ -158,7 +115,7 @@ export class StudiesController {
   @Get(':id/download/original')
   @ApiOperation({
     summary: 'Download original uploaded file',
-    description: 'Downloads the file directly. Add ?info=true to get JSON with download URL.'
+    description: 'Downloads the file directly. Add info = true to get JSON with download URL.'
   })
   @ApiQuery({ name: 'info', required: false, type: Boolean, description: 'Return JSON info instead of downloading' })
   async downloadOriginal(
@@ -190,8 +147,8 @@ export class StudiesController {
 
   @Get(':id/download/volume')
   @ApiOperation({
-    summary: 'Download processed volume (NIfTI)',
-    description: 'Downloads the file directly. Add ?info=true to get JSON with download URL.'
+    summary: 'Download processed volume',
+    description: 'Downloads the file directly. Add info = true to get JSON with download URL.'
   })
   @ApiQuery({ name: 'info', required: false, type: Boolean, description: 'Return JSON info instead of downloading' })
   async downloadVolume(
@@ -223,8 +180,8 @@ export class StudiesController {
 
   @Get(':id/download/mask')
   @ApiOperation({
-    summary: 'Download segmentation mask (NIfTI)',
-    description: 'Downloads the file directly. Add ?info=true to get JSON with download URL.'
+    summary: 'Download segmentation mask',
+    description: 'Downloads the file directly. Add info = true to get JSON with download URL.'
   })
   @ApiQuery({ name: 'info', required: false, type: Boolean, description: 'Return JSON info instead of downloading' })
   async downloadMask(
@@ -263,7 +220,7 @@ export class StudiesController {
   @Get(':id/download/mesh/:filename')
   @ApiOperation({
     summary: 'Download 3D mesh file (STL, OBJ, MTL)',
-    description: 'Downloads the mesh file directly to your browser\'s Downloads folder. Add ?info=true to get JSON with download URL instead of downloading.'
+    description: 'Downloads the mesh file directly. Add info = true to get JSON with download URL instead of downloading.'
   })
   @ApiQuery({ name: 'info', required: false, type: Boolean, description: 'Return JSON info instead of downloading file' })
   async downloadMesh(

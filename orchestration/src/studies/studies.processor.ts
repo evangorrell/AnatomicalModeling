@@ -15,13 +15,13 @@ export interface ProcessNiftiJobData {
   studyId: string;
   s3Key: string;
   filename: string;
-  labelsS3Key?: string;  // Optional ground truth labels file
-  useLabels?: boolean;   // Whether to use labels for tumor
+  labelsS3Key?: string;  // Ground truth labels file
+  useLabels?: boolean;
 }
 
 @Processor('studies', {
   concurrency: 3, // Process up to 3 studies concurrently
-  lockDuration: 600000, // 10 minutes - mesh generation is slow
+  lockDuration: 1200000, // 20 minutes
   lockRenewTime: 30000, // Renew lock every 30 seconds
 })
 export class StudiesProcessor extends WorkerHost {
@@ -87,10 +87,10 @@ export class StudiesProcessor extends WorkerHost {
       }
 
       // Stage 3: Mesh Generation (60-95%)
-      await this.emitProgress(studyId, 60, 'mesh_generation', 'Generating 3D meshes...');
+      await this.emitProgress(studyId, 60, 'mesh_generation', 'Generating 3D models...');
       const meshDir = path.join(outputDir, 'meshes');
       const meshMetadata = await this.runMeshGeneration(studyId, maskPath, meshDir);
-      await this.emitProgress(studyId, 95, 'mesh_generation', '3D meshes generated');
+      await this.emitProgress(studyId, 95, 'mesh_generation', '3D models generated');
 
       // Upload mesh files to S3 and track which ones exist
       const meshFiles = ['brain.stl', 'brain.obj', 'brain.mtl', 'tumor.stl', 'tumor.obj', 'tumor.mtl', 'mesh_metadata.json'];
@@ -124,11 +124,10 @@ export class StudiesProcessor extends WorkerHost {
       await this.emitProgress(studyId, 100, 'finalizing', 'Processing complete!');
 
       // Save results to results/{input_name}/ folder
-      // Extract base name from filename (remove .nii.gz or .nii extension)
+      // Extract base name from filename
       let baseName = filename.replace(/\.nii\.gz$/, '').replace(/\.nii$/, '');
 
-      // Find unique folder name (add _2, _3, etc. if exists)
-      // Save to parent directory's results folder (AnatomicalModeling/results/)
+      // Find unique folder name
       const resultsBaseDir = path.resolve(process.cwd(), '..', 'results');
       fs.mkdirSync(resultsBaseDir, { recursive: true });
 
@@ -148,7 +147,7 @@ export class StudiesProcessor extends WorkerHost {
         fs.cpSync(tempOutputDir, resultsDir, { recursive: true, force: true });
       }
 
-      // Emit completion event BEFORE cleanup (use tracked list)
+      // Emit completion event before cleanup
       this.logger.log(`Emitting complete event for study ${studyId}`);
       this.progressGateway.emitComplete(studyId, {
         studyId,
@@ -156,7 +155,7 @@ export class StudiesProcessor extends WorkerHost {
         meshes: uploadedMeshFiles,
       });
 
-      // Cleanup temp files AFTER emitting completion
+      // Cleanup temp files after emitting completion
       fs.rmSync(tempDir, { recursive: true, force: true });
 
       return { studyId, status: 'completed' };
@@ -207,7 +206,7 @@ export class StudiesProcessor extends WorkerHost {
     // If labels file provided, use it for tumor segmentation
     if (labelsPath) {
       args.push('--use-labels', labelsPath);
-      args.push('--tumor-labels', '1,2,3');  // BraTS tumor labels
+      args.push('--tumor-labels', '1,2,3');
       this.logger.log(`Using ground truth labels from ${labelsPath}`);
     }
 

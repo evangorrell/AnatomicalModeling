@@ -20,10 +20,10 @@ async function bootstrap() {
 
   // Swagger API documentation
   const config = new DocumentBuilder()
-    .setTitle('DICOM to 3D Pipeline API')
-    .setDescription('API for converting MRI DICOM series to 3D meshes')
+    .setTitle('MRI to 3D Model Pipeline API')
+    .setDescription('API for converting MRI images to 3D models')
     .setVersion('0.1.0')
-    .addTag('studies', 'DICOM study upload and management')
+    .addTag('studies', 'MRI study upload and management')
     .addTag('jobs', 'Reconstruction job management')
     .addTag('models', '3D model artifacts and downloads')
     .build();

@@ -9,7 +9,7 @@ import { EventsModule } from './events/events.module';
 
 @Module({
   imports: [
-    // Configuration
+    // Config
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
