@@ -64,9 +64,9 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
   const halfSize = size / 2;
 
   // Convert normalized position to actual coordinates
-  // Negate X to fix sagittal tracking direction
-  const posX = -position.x * halfSize;
-  const posY = position.y * halfSize;
+  // Mesh uses LPS with Y negated for display, so negate Y to match
+  const posX = position.x * halfSize;
+  const posY = -position.y * halfSize;
   const posZ = position.z * halfSize;
 
   // Use key to force re-render when position changes (buffer geometry doesn't auto-update)

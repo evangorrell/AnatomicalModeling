@@ -9,11 +9,15 @@ Reference: Lorensen, W. E., & Cline, H. E. (1987). "Marching cubes: A high resol
 """
 
 import logging
-from typing import Tuple, Optional, Union
+from typing import Tuple, Optional
 import numpy as np
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+# Numerical tolerances for edge interpolation and normal computation
+INTERP_TOLERANCE = 1e-5   # Snap-to-vertex threshold during edge interpolation
+NORMAL_EPSILON = 1e-8     # Minimum magnitude for valid normal vectors
 
 
 @dataclass
@@ -189,11 +193,11 @@ class MarchingCubes:
                         v2 = cube_corners[c2]
 
                         # Linear interpolation
-                        if abs(level - v1) < 1e-5:
+                        if abs(level - v1) < INTERP_TOLERANCE:
                             t = 0.0
-                        elif abs(level - v2) < 1e-5:
+                        elif abs(level - v2) < INTERP_TOLERANCE:
                             t = 1.0
-                        elif abs(v2 - v1) < 1e-5:
+                        elif abs(v2 - v1) < INTERP_TOLERANCE:
                             t = 0.0
                         else:
                             t = (level - v1) / (v2 - v1)
@@ -258,6 +262,11 @@ class MarchingCubes:
         vertices = np.array(vertices_list, dtype=np.float32)
         faces = np.array(faces_list, dtype=np.int32)
 
+        # Transform from scaled-voxel space to physical (LPS) space
+        # vertices currently hold (voxel_index * spacing) in (x, y, z) order
+        # physical = origin + direction @ (voxel * spacing)
+        vertices = ((direction_matrix @ vertices.T).T + origin_xyz).astype(np.float32)
+
         logger.info(f"Generated mesh: {len(vertices):,} vertices, {len(faces):,} faces")
 
         # Compute normals
@@ -302,7 +311,7 @@ class MarchingCubes:
 
             # Normalize
             norm = np.linalg.norm(face_normal)
-            if norm > 1e-8:
+            if norm > NORMAL_EPSILON:
                 face_normal /= norm
 
             # Add to vertex normals
@@ -312,7 +321,7 @@ class MarchingCubes:
 
         # Normalize vertex normals
         norms = np.linalg.norm(normals, axis=1, keepdims=True)
-        norms[norms < 1e-8] = 1.0  # Avoid division by zero
+        norms[norms < NORMAL_EPSILON] = 1.0  # Avoid division by zero
         normals /= norms
 
         return normals
@@ -370,21 +379,7 @@ class MarchingCubes:
         Returns 256x16 array where each row lists up to 5 triangles (15 edges).
         Each triangle is defined by 3 edge indices. -1 indicates end of list.
         """
-        # Standard MC triangle table (abbreviated for space - full version in actual implementation)
-        # This is a simplified version; production code would have all 256 entries
-        tri_table = -np.ones((256, 16), dtype=np.int32)
-
-        # Include key configurations (full table would be very long)
-        # Entry for cube_index=1: single triangle at corner 0
-        tri_table[1] = [0, 8, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
-        tri_table[2] = [0, 1, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
-        tri_table[3] = [1, 8, 3, 9, 8, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
-
-        # For a complete implementation, all 256 cases need to be defined
-        # I'll use a standard reference table
-        tri_table = self._get_full_tri_table()
-
-        return tri_table
+        return self._get_full_tri_table()
 
     def _get_full_tri_table(self) -> np.ndarray:
         """Get the complete standard Marching Cubes triangle table."""
