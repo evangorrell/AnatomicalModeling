@@ -14,6 +14,11 @@ import pymeshlab
 
 logger = logging.getLogger(__name__)
 
+# Repair parameters
+MAX_HOLE_SIZE_EDGES = 100       # Maximum hole size (in edges) to close during repair
+SNAP_THRESHOLD_PCT = 0.01       # Snap threshold as percentage of bounding box diagonal
+DECIMATION_QUALITY_THR = 0.3    # Quality threshold for quadric edge collapse decimation
+
 
 def repair_mesh_advanced(
     vertices: np.ndarray,
@@ -22,7 +27,7 @@ def repair_mesh_advanced(
     target_faces: Optional[int] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Advanced mesh repair using PyMeshLab (MeshLab Python API).
+    Advanced mesh repair using PyMeshLab.
 
     This function applies professional mesh repair algorithms:
     1. Remove duplicate/unreferenced vertices
@@ -46,7 +51,7 @@ def repair_mesh_advanced(
         ImportError: If pymeshlab is not installed
         RuntimeError: If mesh repair fails
     """
-    logger.info("Starting advanced mesh repair (PyMeshLab 2025.7)...")
+    logger.info("Starting advanced mesh repair...")
     logger.info(f"  Input: {len(vertices):,} vertices, {len(faces):,} faces")
 
     try:
@@ -58,37 +63,37 @@ def repair_mesh_advanced(
         ms.add_mesh(mesh)
 
         # Step 1: Remove duplicates and unreferenced vertices
-        logger.info("  Step 1: Removing duplicate/unreferenced vertices...")
+        logger.info("  Removing duplicate/unreferenced vertices...")
         ms.apply_filter('meshing_remove_duplicate_vertices')
         ms.apply_filter('meshing_remove_unreferenced_vertices')
 
         # Step 2: Remove degenerate and duplicate faces
-        logger.info("  Step 2: Removing degenerate/duplicate faces...")
+        logger.info("  Removing degenerate/duplicate faces...")
         ms.apply_filter('meshing_remove_null_faces')  # Zero-area triangles
         ms.apply_filter('meshing_remove_duplicate_faces')
 
         # Step 3: Repair non-manifold geometry
-        logger.info("  Step 3: Repairing non-manifold edges/vertices...")
+        logger.info("  Repairing non-manifold edges/vertices...")
         # Split non-manifold vertices
         ms.apply_filter('meshing_repair_non_manifold_vertices')
         # Remove non-manifold edges
         ms.apply_filter('meshing_repair_non_manifold_edges', method='Remove Faces')
 
         # Step 4: Close holes
-        logger.info("  Step 4: Closing holes...")
+        logger.info("  Closing holes...")
         # Close all holes up to 100 edges
-        ms.apply_filter('meshing_close_holes', maxholesize=100)
+        ms.apply_filter('meshing_close_holes', maxholesize=MAX_HOLE_SIZE_EDGES)
 
         # Step 5: Re-orient faces consistently
-        logger.info("  Step 5: Re-orienting faces...")
+        logger.info("  Re-orienting faces...")
         ms.apply_filter('meshing_re_orient_faces_coherently')
 
         # Step 6: Snap vertices together
-        logger.info("  Step 6: Snapping nearby vertices...")
-        ms.apply_filter('meshing_snap_mismatched_borders', threshold=pymeshlab.PercentageValue(0.01))
+        logger.info("  Snapping nearby vertices...")
+        ms.apply_filter('meshing_snap_mismatched_borders', threshold=pymeshlab.PercentageValue(SNAP_THRESHOLD_PCT))
 
         # Step 7: Final cleanup
-        logger.info("  Step 7: Final cleanup...")
+        logger.info("  Final cleanup...")
         ms.apply_filter('meshing_remove_duplicate_vertices')
         ms.apply_filter('meshing_remove_unreferenced_vertices')
 
@@ -96,16 +101,16 @@ def repair_mesh_advanced(
         if target_faces is not None:
             current_faces = ms.current_mesh().face_number()
             if current_faces > target_faces:
-                logger.info(f"  Step 8: Decimating mesh ({current_faces:,} → {target_faces:,} faces)...")
+                logger.info(f"  Decimating mesh ({current_faces:,} → {target_faces:,} faces)...")
                 ms.apply_filter('meshing_decimation_quadric_edge_collapse',
                                targetfacenum=target_faces,
                                preserveboundary=True,
                                preservenormal=True,
                                preservetopology=True,
-                               qualitythr=0.3)
+                               qualitythr=DECIMATION_QUALITY_THR)
 
         # Step 9: Recompute normals
-        logger.info("  Step 9: Recomputing smooth normals...")
+        logger.info("  Recomputing smooth normals...")
         ms.apply_filter('compute_normal_per_vertex')
 
         # Extract repaired mesh
@@ -131,62 +136,24 @@ def repair_mesh_advanced(
         is_manifold = is_watertight and final_mesh.is_winding_consistent
 
         if is_watertight:
-            logger.info("  ✓ Mesh is WATERTIGHT! Ready for 3D printing.")
+            logger.info("  Mesh is watertight! Ready for 3D printing.")
         else:
-            logger.warning("  ⚠️  Mesh may still have gaps")
+            logger.warning("  Mesh may still have gaps")
 
         if is_manifold:
-            logger.info("  ✓ Mesh is MANIFOLD! Perfect geometry.")
+            logger.info("  Mesh is manifold! Perfect geometry.")
         else:
-            logger.warning("  ⚠️  Mesh may have non-manifold edges")
+            logger.warning("  Mesh may have non-manifold edges")
 
-        logger.info("✓ Advanced mesh repair complete!")
+        logger.info("Advanced mesh repair complete!")
 
         return vertices_out, faces_out, normals_out
 
     except Exception as e:
-        logger.error(f"Advanced mesh repair failed: {e}")
-        logger.error("Falling back to original mesh...")
+        logger.error(f"Advanced mesh repair failed: {e}", exc_info=True)
+        logger.warning("Falling back to original mesh")
         if normals is None:
             import trimesh
             mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
             normals = mesh.vertex_normals.copy()
         return vertices, faces, normals
-
-
-def validate_watertight(vertices: np.ndarray, faces: np.ndarray) -> dict:
-    """
-    Validate if mesh is watertight and print quality report.
-
-    Args:
-        vertices: (N, 3) vertex positions
-        faces: (M, 3) triangle indices
-
-    Returns:
-        dict with validation results
-    """
-    import trimesh
-
-    mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
-
-    results = {
-        'is_watertight': mesh.is_watertight,
-        'is_manifold': mesh.is_watertight and mesh.is_winding_consistent,
-        'n_vertices': len(vertices),
-        'n_faces': len(faces),
-        'euler_characteristic': mesh.euler_number,
-        'volume': mesh.volume if mesh.is_watertight else None,
-        'surface_area': mesh.area,
-    }
-
-    logger.info("Mesh Validation Results:")
-    logger.info(f"  Watertight: {'YES ✓' if results['is_watertight'] else 'NO ✗'}")
-    logger.info(f"  Manifold: {'YES ✓' if results['is_manifold'] else 'NO ✗'}")
-    logger.info(f"  Vertices: {results['n_vertices']:,}")
-    logger.info(f"  Faces: {results['n_faces']:,}")
-    logger.info(f"  Euler χ: {results['euler_characteristic']}")
-    if results['volume'] is not None:
-        logger.info(f"  Volume: {results['volume']:.2f} mm³")
-    logger.info(f"  Surface area: {results['surface_area']:.2f} mm²")
-
-    return results

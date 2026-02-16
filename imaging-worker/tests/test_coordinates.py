@@ -11,8 +11,6 @@ These tests verify that:
 import pytest
 import numpy as np
 import SimpleITK as sitk
-import tempfile
-from pathlib import Path
 
 from src.surf.marching_cubes import MarchingCubes, Mesh
 from src.debug.diagnostics import (

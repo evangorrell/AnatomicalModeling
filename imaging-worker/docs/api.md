@@ -1,6 +1,6 @@
 # API Reference
 
-REST API for DICOM to 3D mesh pipeline.
+REST API for the NIfTI-to-3D-mesh pipeline.
 
 ## Base URL
 
@@ -10,44 +10,51 @@ http://localhost:3000
 
 ## Authentication
 
-🚧 Not yet implemented (Phase B1).
+Not yet implemented.
 
 ---
 
 ## Studies
 
-### Upload DICOM Study
+### Upload NIfTI Image + Labels
 
-Upload a ZIP file containing DICOM series.
+Upload an MRI image and ground-truth tumor label file. Both must be NIfTI format (`.nii.gz` or `.nii`). The pipeline segments the brain from the image using Otsu thresholding, extracts the tumor from the labels, and generates 3D meshes (STL/OBJ) for both structures.
 
 **Endpoint**: `POST /studies/upload`
 
 **Request**:
 - Content-Type: `multipart/form-data`
-- Body: `file` (ZIP file)
+- Fields:
+  - `image` (required): MRI image file (`.nii.gz`)
+  - `labels` (required): Ground-truth tumor label file (`.nii.gz`)
+
+The API automatically determines which file is the image vs labels.
 
 **Example**:
 ```bash
 curl -X POST http://localhost:3000/studies/upload \
-  -F "file=@kidney-scan.zip"
+  -F "image=@BRATS_001.nii.gz" \
+  -F "labels=@BRATS_001_seg.nii.gz"
 ```
 
-**Response** (200 OK):
+**Response** (201 Created):
 ```json
 {
   "studyId": "550e8400-e29b-41d4-a716-446655440000",
-  "message": "DICOM study uploaded and processed successfully"
+  "jobId": "1",
+  "message": "Image and labels uploaded. Brain will be segmented from image, tumor from labels.",
+  "fileType": "nifti_with_labels",
+  "status": "processing"
 }
 ```
 
-**Processing**:
-1. ZIP uploaded to S3: `studies/{studyId}/original.zip`
-2. DICOM ingestion (de-identify, sort slices)
-3. Isotropic resampling
-4. Artifacts uploaded:
-   - `studies/{studyId}/volume.nii.gz`
-   - `studies/{studyId}/volume_isotropic.nii.gz`
-5. Metadata extracted and stored
+**Processing pipeline** (runs async via BullMQ):
+1. Files uploaded to S3: `studies/{studyId}/original.nii.gz` and `studies/{studyId}/labels.nii.gz`
+2. Segmentation: brain via Otsu threshold, tumor from labels
+3. Mesh generation: custom Marching Cubes for each structure
+4. Mesh post-processing: repair, smoothing via PyMeshLab
+5. Export: STL + OBJ files uploaded to `studies/{studyId}/meshes/`
+6. Progress streamed via WebSocket
 
 ### Get Study
 
@@ -59,20 +66,12 @@ Retrieve study details.
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
-  "seriesInstanceUID": "1.2.840.113619.2.55.3...",
-  "sliceCount": 120,
-  "modality": "MR",
-  "seriesDescription": "T2 AXIAL",
-  "metadata": {
-    "size": [256, 256, 120],
-    "spacing": [1.0, 1.0, 3.0],
-    "origin": [0, 0, 0],
-    "direction": [1, 0, 0, 0, 1, 0, 0, 0, 1],
-    "slice_normal": [0, 0, 1],
-    "manufacturer": "SIEMENS",
-    "field_strength": 3.0
-  },
-  "s3Key": "studies/.../original.zip",
+  "seriesInstanceUID": null,
+  "sliceCount": null,
+  "modality": null,
+  "seriesDescription": null,
+  "metadata": { ... },
+  "s3Key": "studies/.../original.nii.gz",
   "volumeS3Key": "studies/.../volume.nii.gz",
   "createdAt": "2025-11-01T12:00:00Z",
   "updatedAt": "2025-11-01T12:00:00Z",
@@ -82,7 +81,7 @@ Retrieve study details.
 
 ### List Studies
 
-List all uploaded studies.
+List all uploaded studies, ordered by creation date (newest first).
 
 **Endpoint**: `GET /studies`
 
@@ -91,9 +90,7 @@ List all uploaded studies.
 [
   {
     "id": "...",
-    "seriesDescription": "T2 AXIAL",
-    "sliceCount": 120,
-    "modality": "MR",
+    "metadata": { ... },
     "createdAt": "2025-11-01T12:00:00Z"
   }
 ]
@@ -101,25 +98,117 @@ List all uploaded studies.
 
 ---
 
-## Jobs
+## Artifacts
 
-🚧 Coming in Phase A5.
+### Get Artifact URLs
 
-Planned endpoints:
-- `POST /studies/:studyId/reconstruct` - Start reconstruction job
-- `GET /jobs/:jobId` - Get job status and progress
-- `GET /jobs/:jobId/logs` - Stream job logs
+Get signed S3 URLs for all study artifacts.
+
+**Endpoint**: `GET /studies/:id/artifacts`
+
+**Response** (200 OK):
+```json
+{
+  "studyId": "...",
+  "artifacts": {
+    "original": "https://...",
+    "volume": "https://...",
+    "mask": "https://...",
+    "volume_isotropic": "https://..."
+  },
+  "metadata": { ... }
+}
+```
+
+### Download Original Image
+
+**Endpoint**: `GET /studies/:id/download/original`
+
+**Query params**: `info=true` returns JSON with download URL instead of streaming the file.
+
+### Download Processed Volume
+
+**Endpoint**: `GET /studies/:id/download/volume`
+
+**Query params**: `info=true` returns JSON with download URL.
+
+### Download Segmentation Mask
+
+**Endpoint**: `GET /studies/:id/download/mask`
+
+**Query params**: `info=true` returns JSON with download URL.
 
 ---
 
-## Models
+## Meshes
 
-🚧 Coming in Phase A5.
+### List Meshes
 
-Planned endpoints:
-- `GET /models/:modelId` - Get model metadata
-- `GET /models/:modelId/preview` - Get preview artifacts
-- `GET /models/:modelId/mesh?format=stl` - Download mesh
+List all generated 3D mesh files for a study.
+
+**Endpoint**: `GET /studies/:id/meshes`
+
+**Response** (200 OK):
+```json
+{
+  "meshes": ["brain.stl", "brain.obj", "brain.mtl", "tumor.stl", "tumor.obj", "tumor.mtl"],
+  "metadata": { ... }
+}
+```
+
+### Download Mesh File
+
+Download a specific mesh file (STL, OBJ, MTL).
+
+**Endpoint**: `GET /studies/:id/download/mesh/:filename`
+
+**Query params**: `info=true` returns JSON with download URL instead of streaming the file.
+
+**Example**:
+```bash
+# Stream file directly
+curl -L http://localhost:3000/studies/{studyId}/download/mesh/brain.stl -o brain.stl
+
+# Get download URL
+curl http://localhost:3000/studies/{studyId}/download/mesh/brain.stl?info=true
+```
+
+---
+
+## WebSocket Events
+
+Connect via Socket.IO on namespace `/progress`.
+
+### Subscribe to Progress
+
+```javascript
+socket.emit('subscribe', studyId);
+```
+
+### Progress Events (server to client)
+
+```javascript
+socket.on('progress', (data) => {
+  // data: { studyId, percentage, stage, message, timestamp }
+  // stage: 'upload' | 'segmentation' | 'mesh_generation' | 'finalizing'
+});
+```
+
+### Complete Event
+
+```javascript
+socket.on('complete', (data) => {
+  // data: { studyId, status, meshes: string[] }
+});
+```
+
+### Error Event
+
+```javascript
+socket.on('error', (data) => {
+  // data: { message, details? }
+});
+```
 
 ---
 
@@ -128,12 +217,6 @@ Planned endpoints:
 Full interactive API documentation available at:
 
 **http://localhost:3000/api**
-
-Includes:
-- All endpoints with examples
-- Request/response schemas
-- Try-it-out functionality
-- Model definitions
 
 ---
 
@@ -144,12 +227,12 @@ All errors follow this format:
 ```json
 {
   "statusCode": 400,
-  "message": "File must be a ZIP archive",
+  "message": "Both image and labels files are required",
   "error": "Bad Request"
 }
 ```
 
 **Common Status Codes**:
-- `400` - Bad Request (invalid input)
+- `400` - Bad Request (invalid input, missing files)
 - `404` - Not Found
 - `500` - Internal Server Error

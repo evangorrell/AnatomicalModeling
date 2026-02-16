@@ -55,22 +55,15 @@ logs/
 node_modules/
 
 # Testing
-.coverage
+.coverage*
 .pytest_cache/
 coverage/
 
 # Code help files
-orchestration/TROUBLESHOOTING.md
-orchestration/test-spawn.js
 .claude/
-CLAUDE.md
-SEGMENTATION_IMPROVEMENTS.md
-RUN_COMMANDS.md
 
-# Old development docs
-imaging-worker/docs/
-imaging-worker/INSTALL.md
-miscellaneous-images/
+# Development docs
+imaging-worker/docs/coordinate-system-fix.md
 
 # Gitignore
 .gitignore

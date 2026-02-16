@@ -11,7 +11,7 @@ from src.prep.resample import VolumeResampler
 from src.seg.classical import ClassicalSegmenter
 from src.seg.metrics import SegmentationMetrics
 from src.export.mesh_export import export_stl, export_obj, export_ply
-from src.mesh.postprocess import postprocess_mesh
+from src.mesh.repair import repair_mesh_advanced
 import SimpleITK as sitk
 import numpy as np
 
@@ -22,10 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
 # Shared helpers
-# ---------------------------------------------------------------------------
-
 def _extract_3d_volume(image: sitk.Image) -> sitk.Image:
     """Extract a single 3D volume from a 4D image (multi-channel MRI)."""
     if image.GetDimension() != 4:
@@ -85,10 +82,7 @@ def _segment_brain_otsu(image_arr: np.ndarray) -> np.ndarray:
     return brain_mask.astype(bool)
 
 
-# ---------------------------------------------------------------------------
 # Commands
-# ---------------------------------------------------------------------------
-
 def cmd_resample(args) -> int:
     """Resample volume to isotropic spacing."""
     logger.info(f"Resampling volume: {args.input}")
@@ -181,7 +175,7 @@ def _segment_with_labels(args, image: sitk.Image) -> tuple:
 
 
 def _segment_classical(args, image: sitk.Image) -> tuple:
-    """Segment using classical methods (Otsu or level-set)."""
+    """Segment using classical methods (Otsu thresholding + morphology)."""
     segmenter = ClassicalSegmenter(
         closing_radius=args.closing_radius,
         opening_radius=args.opening_radius,
@@ -190,14 +184,8 @@ def _segment_classical(args, image: sitk.Image) -> tuple:
         tumor_threshold_std=args.tumor_threshold_std,
     )
 
-    if args.method == "levelset":
-        print("PROGRESS: 30 - Running level-set segmentation...", flush=True)
-        return segmenter.segment_with_levelset(
-            image, iterations=args.levelset_iterations, output_dir=Path(args.output)
-        )
-    else:
-        print("PROGRESS: 30 - Running Otsu thresholding...", flush=True)
-        return segmenter.segment(image, Path(args.output))
+    print("PROGRESS: 30 - Running Otsu thresholding...", flush=True)
+    return segmenter.segment(image, Path(args.output))
 
 
 def cmd_segment(args) -> int:
@@ -290,9 +278,7 @@ def _process_single_label(label, label_name, label_color, mask_array, spacing, o
 
     mc = MarchingCubes(step_size=step_size)
 
-    logger.info(f"\n{'='*60}")
     logger.info(f"Processing label {label}: {label_name}")
-    logger.info('='*60)
 
     binary_mask = (mask_array == label).astype(np.float32)
     logger.info(f"Label {label} voxels: {binary_mask.sum():,}")
@@ -309,7 +295,7 @@ def _process_single_label(label, label_name, label_color, mask_array, spacing, o
 
     logger.info(f"[{label_name}] Raw MC: {mesh.n_vertices:,} vertices, {mesh.n_faces:,} faces")
 
-    # Negate Y-axis: LPS (+y=posterior) → display convention (+y=anterior)
+    # Negate Y-axis: LPS (+y=posterior) -> display convention (+y=anterior)
     # so the 3D view matches radiological axial orientation
     mesh.vertices[:, 1] = -mesh.vertices[:, 1]
     if mesh.normals is not None:
@@ -321,7 +307,7 @@ def _process_single_label(label, label_name, label_color, mask_array, spacing, o
     if not args.no_postprocess:
         logger.info(f"[{label_name}] Post-processing mesh...")
         target_faces = int(len(mesh.faces) * (1 - args.decimation_target)) if args.decimate else None
-        vertices, faces, normals = postprocess_mesh(
+        vertices, faces, normals = repair_mesh_advanced(
             mesh.vertices, mesh.faces, mesh.normals,
             target_faces=target_faces,
         )
@@ -389,9 +375,7 @@ def cmd_mesh(args) -> int:
                 save_debug_stats,
                 print_diagnostics,
             )
-            logger.info("\n" + "="*60)
             logger.info("DEBUG MODE - Computing diagnostics")
-            logger.info("="*60)
 
             debug_dir = output_dir / "debug"
             debug_dir.mkdir(parents=True, exist_ok=True)
@@ -484,10 +468,7 @@ def cmd_mesh(args) -> int:
 
         print("PROGRESS: 100 - Mesh generation complete!", flush=True)
 
-        logger.info(f"\n{'='*60}")
         logger.info(f"Generated {len(meshes_metadata)} meshes -> {output_dir}")
-        logger.info('='*60)
-
         return 0
 
     except Exception as e:
@@ -495,10 +476,7 @@ def cmd_mesh(args) -> int:
         return 1
 
 
-# ---------------------------------------------------------------------------
 # CLI argument parser
-# ---------------------------------------------------------------------------
-
 def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -523,15 +501,10 @@ def main() -> int:
     segment_parser = subparsers.add_parser("segment", help="Segment a NIfTI volume")
     segment_parser.add_argument("input", help="Path to NIfTI file (.nii.gz)")
     segment_parser.add_argument("output", help="Output directory")
-    segment_parser.add_argument(
-        "--method", choices=["otsu", "levelset"], default="otsu",
-        help="Segmentation method (default: otsu)",
-    )
     segment_parser.add_argument("--closing-radius", type=int, default=5)
     segment_parser.add_argument("--opening-radius", type=int, default=3)
     segment_parser.add_argument("--no-fill-holes", action="store_true")
     segment_parser.add_argument("--keep-all-components", action="store_true")
-    segment_parser.add_argument("--levelset-iterations", type=int, default=100)
     segment_parser.add_argument("--ground-truth", help="Ground truth mask for metrics")
     segment_parser.add_argument(
         "--tumor-threshold-std", type=float, default=1.0,

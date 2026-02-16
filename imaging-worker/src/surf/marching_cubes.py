@@ -1,7 +1,7 @@
 """
 Custom Marching Cubes implementation for surface extraction from volumetric data.
 
-This is a from-scratch implementation showcasing the algorithm's mathematics,
+This is a from-scratch implementation showing the algorithm's mathematics,
 including lookup tables, linear interpolation, and gradient-based normal computation.
 
 Reference: Lorensen, W. E., & Cline, H. E. (1987). "Marching cubes: A high resolution
@@ -101,7 +101,7 @@ class MarchingCubes:
         """
         Extract isosurface from volume using Marching Cubes.
 
-        IMPORTANT COORDINATE CONVENTIONS:
+        Important Coordinate Conventions:
         - volume: NumPy array from SimpleITK GetArrayFromImage(), shape is (z, y, x)
         - spacing: SimpleITK spacing, order is (x, y, z) - will be reversed internally
         - origin: SimpleITK origin, order is (x, y, z) - will be reversed internally

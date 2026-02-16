@@ -1,7 +1,7 @@
 """Segmentation evaluation metrics."""
 
 import logging
-from typing import Dict, Optional
+from typing import Dict
 
 import numpy as np
 import SimpleITK as sitk
@@ -100,7 +100,7 @@ class SegmentationMetrics:
         Args:
             pred: Predicted binary mask.
             gt: Ground truth binary mask.
-            percentile: Percentile (0-100).
+            percentile: Percentile.
 
         Returns:
             Percentile Hausdorff distance in mm.

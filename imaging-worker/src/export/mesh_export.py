@@ -6,11 +6,16 @@ Supports multi-label meshes with different materials/colors.
 
 import logging
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional
 import numpy as np
 import struct
 
 logger = logging.getLogger(__name__)
+
+NORMAL_EPSILON = 1e-8     # Minimum magnitude for valid normal vectors
+STL_HEADER_SIZE = 80      # STL file header size in bytes
+DEFAULT_SPECULAR = (0.5, 0.5, 0.5)  # Default specular reflection for OBJ materials
+DEFAULT_SHININESS = 10.0  # Default shininess exponent for OBJ materials
 
 
 def export_stl(
@@ -42,7 +47,7 @@ def export_stl(
         face_normals = np.mean(normals[faces], axis=1)
         # Normalize
         norms = np.linalg.norm(face_normals, axis=1, keepdims=True)
-        norms[norms < 1e-8] = 1.0
+        norms[norms < NORMAL_EPSILON] = 1.0
         face_normals /= norms
 
     if binary:
@@ -50,7 +55,7 @@ def export_stl(
     else:
         _write_stl_ascii(vertices, faces, face_normals, output_path, label)
 
-    logger.info(f"✓ Exported {len(faces):,} triangles to {output_path}")
+    logger.info(f"  Exported {len(faces):,} triangles to {output_path}")
 
 
 def export_obj(
@@ -118,7 +123,7 @@ def export_obj(
             for face in faces:
                 f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
 
-    logger.info(f"✓ Exported {len(faces):,} triangles to {output_path}")
+    logger.info(f"  Exported {len(faces):,} triangles to {output_path}")
 
 
 def export_ply(
@@ -147,12 +152,10 @@ def export_ply(
     else:
         _write_ply_ascii(vertices, faces, output_path, normals, colors)
 
-    logger.info(f"✓ Exported {len(faces):,} triangles to {output_path}")
+    logger.info(f"  Exported {len(faces):,} triangles to {output_path}")
 
 
-# ============================================================================
 # Helper Functions
-# ============================================================================
 
 def _compute_face_normals(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
     """Compute face normals from vertices and faces."""
@@ -185,7 +188,7 @@ def _write_stl_binary(
 
     with open(output_path, 'wb') as f:
         # Header (80 bytes)
-        header = (label or "mesh")[:80].ljust(80, '\0').encode('utf-8')
+        header = (label or "mesh")[:STL_HEADER_SIZE].ljust(STL_HEADER_SIZE, '\0').encode('utf-8')
         f.write(header)
 
         # Number of triangles (4 bytes, unsigned int)
@@ -362,6 +365,6 @@ def _write_mtl_file(
         f.write(f"newmtl {material_name}\n")
         f.write(f"Ka {color[0]:.3f} {color[1]:.3f} {color[2]:.3f}\n")  # Ambient
         f.write(f"Kd {color[0]:.3f} {color[1]:.3f} {color[2]:.3f}\n")  # Diffuse
-        f.write(f"Ks 0.5 0.5 0.5\n")  # Specular
-        f.write(f"Ns 10.0\n")  # Shininess
+        f.write(f"Ks {DEFAULT_SPECULAR[0]} {DEFAULT_SPECULAR[1]} {DEFAULT_SPECULAR[2]}\n")  # Specular
+        f.write(f"Ns {DEFAULT_SHININESS}\n")  # Shininess
         f.write(f"d 1.0\n")  # Transparency (opaque)

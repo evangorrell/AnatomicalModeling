@@ -13,7 +13,7 @@ COORDINATE CONVENTIONS USED:
   - Spacing/Origin/Size all use (x, y, z) order
 
 - NumPy arrays from GetArrayFromImage: (z, y, x) order
-  - This is the REVERSE of SimpleITK indexing
+  - This is the reverse of SimpleITK indexing
 
 - Mesh vertices: LPS physical coordinates (same as SimpleITK)
 """
@@ -329,85 +329,6 @@ def verify_mask_mesh_consistency(
             )
 
     return results
-
-
-def save_debug_overlays(
-    image: sitk.Image,
-    mask: sitk.Image,
-    output_dir: Path,
-    label: int = 1,
-    name: str = "overlay",
-) -> None:
-    """
-    Save overlay images showing mask on top of the image.
-
-    Generates axial, coronal, and sagittal slices through the
-    mask centroid for visual verification.
-
-    Args:
-        image: The original intensity image
-        mask: The segmentation mask
-        output_dir: Directory to save overlay images
-        label: Label value to overlay
-        name: Base name for output files
-    """
-    try:
-        import matplotlib
-        matplotlib.use('Agg')  # Non-interactive backend
-        import matplotlib.pyplot as plt
-    except ImportError:
-        logger.warning("matplotlib not available, skipping overlay generation")
-        return
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Get arrays
-    img_array = sitk.GetArrayFromImage(image)
-    mask_array = sitk.GetArrayFromImage(mask)
-    mask_binary = (mask_array == label)
-
-    if mask_binary.sum() == 0:
-        logger.warning(f"No voxels with label {label}, skipping overlay")
-        return
-
-    # Find centroid slice indices
-    coords = np.where(mask_binary)
-    z_center = int(coords[0].mean())
-    y_center = int(coords[1].mean())
-    x_center = int(coords[2].mean())
-
-    # Get image info for annotation
-    spacing = image.GetSpacing()
-    origin = image.GetOrigin()
-
-    # Create overlays
-    slices = [
-        ("axial", img_array[z_center, :, :], mask_binary[z_center, :, :], f"z={z_center}"),
-        ("coronal", img_array[:, y_center, :], mask_binary[:, y_center, :], f"y={y_center}"),
-        ("sagittal", img_array[:, :, x_center], mask_binary[:, :, x_center], f"x={x_center}"),
-    ]
-
-    for view_name, img_slice, mask_slice, slice_info in slices:
-        fig, ax = plt.subplots(1, 1, figsize=(8, 8))
-
-        # Show image
-        ax.imshow(img_slice, cmap='gray', origin='lower')
-
-        # Overlay mask with transparency
-        masked = np.ma.masked_where(~mask_slice, mask_slice)
-        ax.imshow(masked, cmap='Reds', alpha=0.5, origin='lower')
-
-        # Annotations
-        ax.set_title(f"{name} - {view_name.upper()} ({slice_info})\n"
-                    f"Spacing (x,y,z): {spacing}\n"
-                    f"Origin (x,y,z): {origin}\n"
-                    f"Convention: LPS (SimpleITK)")
-        ax.axis('off')
-
-        output_path = output_dir / f"{name}_{view_name}.png"
-        plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        plt.close(fig)
-        logger.info(f"Saved overlay: {output_path}")
 
 
 def save_debug_stats(
