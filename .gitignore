@@ -64,7 +64,6 @@ coverage/
 
 # Development docs
 imaging-worker/docs/coordinate-system-fix.md
-docs/
 
 # Gitignore
 .gitignore
