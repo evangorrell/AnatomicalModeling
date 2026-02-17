@@ -59,7 +59,7 @@ export default function App() {
     setProgressMessage('');
   };
 
-  // Sort NIfTI files by size descending — larger = MRI image, smaller = labels
+  // Sort NIfTI files by size descending: larger = MRI image, smaller = labels
   const getSortedNifti = () => [...uploadedFiles.nifti].sort((a, b) => b.size - a.size);
 
   // Cleanup WebSocket on unmount
