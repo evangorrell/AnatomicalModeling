@@ -1,8 +1,32 @@
-# AnatomicalModeling
+# Anatomical Modeling
 
-Medical imaging pipeline that converts NIfTI brain scans into interactive 3D meshes.
+A full-stack volumetric reconstruction engine that converts medical imaging brain scans (NIfTI) into physically accurate, watertight 3D meshes with synchronized 2D/3D visualization and measurement tooling.
 
-Processes MRI brain scans (NIfTI format) or pre-made STL files and generates 3D mesh visualizations with brain and tumor structures. Built with Python for image processing, TypeScript for orchestration, and React for interactive visualization.
+Built with Python for image processing, TypeScript for orchestration, and React for interactive visualization.
+
+---
+
+## Demo
+
+![Quad View](docs/quadview.png)
+
+---
+
+## Motivation
+
+Magnetic resonance imaging (MRI) produces volumetric data that is typically reviewed as a sequence of 2D grayscale slices. While clinicians are trained to mentally reconstruct spatial relationships from these slices, patients often struggle to interpret what they are seeing.
+
+For individuals diagnosed with brain tumors, this creates a significant communication gap. Patients frequently cannot:
+
+- Visualize the three-dimensional extent of a lesion
+- Understand how close a tumor is to critical brain regions
+- Intuitively grasp how growth or treatment might affect surrounding structures
+
+Even for clinicians, navigating volumetric datasets requires specialized software and manual slice-by-slice inspection.
+
+This project was built to reduce that cognitive barrier by converting raw volumetric imaging data into physically accurate 3D reconstructions with synchronized 2D/3D navigation. By preserving voxel-to-world coordinate fidelity and enabling crosshair-linked slice exploration, the system makes spatial relationships immediately interpretable.
+
+It is not a diagnostic tool, but rather a geometric reconstruction and visualization engine designed to improve spatial understanding of volumetric medical data.
 
 ---
 
@@ -10,14 +34,14 @@ Processes MRI brain scans (NIfTI format) or pre-made STL files and generates 3D 
 
 ### Pipeline
 - Upload NIfTI image (`.nii.gz`) + ground-truth tumor labels
-- Classical segmentation: Otsu thresholding + morphological operations
-- Custom Marching Cubes implementation for mesh generation
-- Mesh post-processing via PyMeshLab (smoothing, repair, decimation)
+- Classical segmentation fallback: Otsu thresholding + morphological operations
+- Custom from-scratch Marching Cubes implementation for surface extraction
+- Mesh repair and decimation via PyMeshLab
 - Multi-format export: STL, OBJ, PLY
 
 ### Direct STL Viewing
 - Drag-and-drop STL upload for immediate visualization
-- Automatic brain/tumor classification via filename and volume analysis
+- Automatic brain/tumor classification
 - Manual role correction for ambiguous files
 
 ### Real-Time Processing
@@ -26,9 +50,9 @@ Processes MRI brain scans (NIfTI format) or pre-made STL files and generates 3D 
 - BullMQ job queue for async processing
 
 ### Interactive 3D Viewer
-- Rotate, pan, zoom with mouse/touch controls
+- Rotate and zoom with mouse/touch controls
 - Quad-view mode: axial, sagittal, coronal slices + 3D view
-- Crosshair synchronization across views
+- Crosshair synchronization across all four views
 - Separate opacity and visibility controls per structure
 - Measurement tools and grid overlay
 
@@ -37,11 +61,11 @@ Processes MRI brain scans (NIfTI format) or pre-made STL files and generates 3D 
 ## Architecture
 
 ```
-Frontend (React + Three.js)       :5173
+Frontend (React + Three.js)
         |
         | HTTP / WebSocket
         v
-Orchestration API (NestJS + BullMQ)  :3000
+Orchestration API (NestJS + BullMQ)
         |
         | Job Queue
         v
@@ -52,6 +76,60 @@ Imaging Worker (Python CLI)
  Redis    MinIO (S3)
            PostgreSQL
 ```
+
+---
+
+## Processing Pipeline
+
+The imaging worker converts raw NIfTI volumes into watertight 3D meshes through five stages:
+
+### 1. Resample
+
+`VolumeResampler` converts the input volume to isotropic spacing (default 1 mm^3) using SimpleITK. Supports linear and nearest-neighbor interpolation. Label volumes use nearest-neighbor to preserve discrete class boundaries.
+
+### 2. Segment
+
+**Primary path (ground-truth labels):** When a label file is provided (`--use-labels`), the pipeline reads the pre-annotated tumor mask directly and generates a brain mask via Otsu thresholding + largest connected component extraction.
+
+**Fallback (classical segmentation):** `ClassicalSegmenter` applies Gaussian smoothing, Otsu thresholding, morphological closing/opening, hole filling, and largest-component extraction to produce a brain mask. Tumor regions are identified by intensity thresholding within the brain mask (mean + k*std). `SegmentationMetrics` computes Dice coefficient and Hausdorff distance for validation.
+
+### 3. Marching Cubes
+
+A custom from-scratch implementation of the Lorensen & Cline (1987) algorithm. For each voxel cube, the 256-entry lookup table maps corner classifications to triangle configurations. Edge intersections are computed via linear interpolation, and vertex normals are derived from central-difference gradients of the scalar field. The output is transformed from voxel indices to physical (RAS) coordinates using the NIfTI affine matrix.
+
+Unlike typical pipelines that rely on VTK black-box implementations, this project implements Marching Cubes from scratch to:
+
+- Maintain full control over voxel-to-physical coordinate transforms
+- Ensure affine-correct RAS space output
+- Enable debugging of topology defects at every stage
+- Support custom decimation and manifold repair workflows
+
+Geometric correctness was validated by round-tripping meshes back through the coordinate pipeline and comparing against known physical landmarks.
+
+### 4. Repair
+
+`repair_mesh_advanced` uses PyMeshLab to produce watertight, manifold meshes:
+- Remove duplicate/unreferenced vertices and degenerate faces
+- Repair non-manifold edges and vertices
+- Close holes (up to 100 edges)
+- Re-orient faces consistently
+- Optional quadric edge collapse decimation
+- Recompute smooth vertex normals
+
+### 5. Export
+
+Writes meshes in STL (binary), OBJ (with normals), and PLY formats via trimesh.
+
+---
+
+## Geometric and Coordinate Guarantees
+
+- Voxel-to-world conversion via NIfTI affine matrix
+- Isotropic resampling prior to surface extraction
+- Physical spacing preserved in exported meshes
+- Central-difference gradient normals
+- Manifold repair and watertight enforcement
+- Automatic volume-based role validation (brain vs tumor)
 
 ---
 
@@ -81,7 +159,8 @@ Service endpoints:
 cd imaging-worker
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+cp .env.example .env
+pip install -r requirements.txt
 ```
 
 ### 3. Set Up Orchestration API
@@ -122,7 +201,7 @@ npm run dev
 
 **STL upload:**
 1. Drag and drop 1-2 STL files
-2. System auto-classifies as brain/tumor via filename and volume
+2. System auto-classifies as brain/tumor
 3. View immediately with adjustable opacity and visibility
 
 ### API
@@ -130,8 +209,8 @@ npm run dev
 ```bash
 # Upload NIfTI image + labels
 curl -X POST http://localhost:3000/studies/upload \
-  -F "image=@BRATS_001.nii.gz" \
-  -F "labels=@BRATS_001_seg.nii.gz"
+  -F "image=@Brain001.nii.gz" \
+  -F "labels=@Brain001_seg.nii.gz"
 
 # Check study status
 curl http://localhost:3000/studies/{studyId}
@@ -142,8 +221,6 @@ curl http://localhost:3000/studies/{studyId}/meshes
 # Download a mesh
 curl -L http://localhost:3000/studies/{studyId}/download/mesh/brain.stl -o brain.stl
 ```
-
-Full API reference: [imaging-worker/docs/api.md](imaging-worker/docs/api.md)
 
 ### Imaging Worker CLI
 
@@ -156,8 +233,7 @@ source .venv/bin/activate
 # Resample to isotropic spacing
 python -m src.cli resample volume.nii.gz output/ --spacing 1.0
 
-# Segment (Otsu + morphology, or with ground-truth labels)
-python -m src.cli segment image.nii.gz output/
+# Segment with ground-truth labels (primary)
 python -m src.cli segment image.nii.gz output/ --use-labels labels.nii.gz
 
 # Generate meshes from segmentation mask
@@ -175,7 +251,7 @@ AnatomicalModeling/
 ├── frontend/                    # React + Vite + Three.js
 │   └── src/
 │       ├── components/          # MeshViewer, QuadView, SliceViewer, etc.
-│       ├── hooks/               # Custom React hooks
+│       ├── hooks/               # Custom React hooks (meshes, NIfTI, measurements)
 │       ├── utils/               # Mesh analysis and classification
 │       ├── api.ts               # API client
 │       └── types.ts             # TypeScript types
@@ -193,16 +269,15 @@ AnatomicalModeling/
 │
 ├── imaging-worker/              # Python image processing
 │   ├── src/
-│   │   ├── prep/                # Volume resampling
-│   │   ├── seg/                 # Segmentation (Otsu, level-set, metrics)
-│   │   ├── surf/                # Custom Marching Cubes
-│   │   ├── mesh/                # Post-processing + PyMeshLab repair
+│   │   ├── prep/                # Volume resampling (isotropic spacing)
+│   │   ├── seg/                 # Segmentation (ground-truth labels, Otsu fallback, metrics)
+│   │   ├── surf/                # Custom Marching Cubes implementation
+│   │   ├── mesh/                # PyMeshLab repair and decimation
 │   │   ├── export/              # STL, OBJ, PLY export
 │   │   ├── debug/               # Coordinate diagnostics
 │   │   └── cli.py               # CLI entry point
 │   ├── tests/                   # pytest suite
-│   ├── scripts/                 # Standalone utilities (validate_mesh.py)
-│   └── docs/                    # API reference, getting started
+│   └── scripts/                 # Standalone utilities (validate_mesh.py)
 │
 └── infra/                       # Docker Compose
     └── docker-compose.yml       # PostgreSQL 16, Redis 7, MinIO
@@ -228,7 +303,7 @@ AnatomicalModeling/
 
 ```bash
 # Python worker
-cd imaging-worker && source .venv/bin/activate
+cd imaging-worker
 pytest
 pytest --cov=src tests/
 
@@ -253,13 +328,21 @@ cd orchestration && npm run build  # Output in dist/
 
 ---
 
+## Limitations
+
+- Classical segmentation is not clinically robust
+- No DICOM support yet
+- No GPU acceleration yet
+- Not FDA-cleared; research use only
+
+---
+
 ## Security
 
 - Files stored with UUID-based keys in S3
 - Presigned URLs with expiration for downloads
 - CORS configured for frontend access
 - No authentication in demo mode
-- Research visualization only - not a medical device
 
 ---
 
