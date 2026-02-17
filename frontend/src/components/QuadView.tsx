@@ -30,6 +30,9 @@ function QuadCell({ position, children }: QuadCellProps) {
     borderStyles.borderBottom = DIVIDER;
   } else if (position === 'bottomLeft') {
     borderStyles.borderRight = DIVIDER;
+    borderStyles.borderBottomLeftRadius = '8px';
+  } else if (position === 'bottomRight') {
+    borderStyles.borderBottomRightRadius = '8px';
   }
 
   return <div style={borderStyles}>{children}</div>;

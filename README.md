@@ -316,16 +316,6 @@ cd frontend
 npm run build
 ```
 
-### Building for Production
-
-```bash
-# Frontend
-cd frontend && npm run build     # Output in dist/
-
-# Backend
-cd orchestration && npm run build  # Output in dist/
-```
-
 ---
 
 ## Limitations
