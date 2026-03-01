@@ -87,7 +87,7 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
             itemSize={3}
           />
         </bufferGeometry>
-        <lineBasicMaterial color={color} transparent opacity={opacity} />
+        <lineBasicMaterial color={color} transparent opacity={opacity} depthTest={false} />
       </line>
       {/* Y-axis line */}
       <line>
@@ -99,7 +99,7 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
             itemSize={3}
           />
         </bufferGeometry>
-        <lineBasicMaterial color={color} transparent opacity={opacity} />
+        <lineBasicMaterial color={color} transparent opacity={opacity} depthTest={false} />
       </line>
       {/* Z-axis line */}
       <line>
@@ -111,7 +111,7 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
             itemSize={3}
           />
         </bufferGeometry>
-        <lineBasicMaterial color="#f1c40f" linewidth={2} />
+        <lineBasicMaterial color="#f1c40f" linewidth={2} depthTest={false} />
       </line>
     </group>
   );
