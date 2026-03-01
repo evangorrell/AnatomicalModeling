@@ -8,7 +8,7 @@ Built with Python for image processing, TypeScript for orchestration, and React 
 
 ## Demo
 
-![Quad View](docs/quadview.png)
+![Demo](docs/Demo.gif)
 
 ---
 
