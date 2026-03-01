@@ -321,18 +321,8 @@ npm run build
 ## Limitations
 
 - Classical segmentation is not clinically robust
-- No DICOM support yet
 - No GPU acceleration yet
 - Not FDA-cleared; research use only
-
----
-
-## Security
-
-- Files stored with UUID-based keys in S3
-- Presigned URLs with expiration for downloads
-- CORS configured for frontend access
-- No authentication in demo mode
 
 ---
 
