@@ -50,7 +50,7 @@ interface QuadViewProps {
   stlFiles: { brain: string | null; tumor: string | null };
   meshState: MeshState;
   onMeshStateChange: (updates: Partial<MeshState>) => void;
-  onZoomHandlersReady?: (handlers: { zoomIn: () => void; zoomOut: () => void; getCurrentZoom: () => number }) => void;
+  onZoomHandlersReady?: (handlers: { zoomIn: () => void; zoomOut: () => void; getCurrentZoom: () => number; setZoomDistance: (distance: number) => void }) => void;
   measurementMode?: MeasurementMode;
   onMeasurementModeChange?: (mode: MeasurementMode) => void;
   measurementClearKey?: number;
@@ -58,6 +58,9 @@ interface QuadViewProps {
   undoKey?: number;
   showCrosshairs?: boolean;
   onShowCrosshairsChange?: (show: boolean) => void;
+  showGrid: boolean;
+  onShowGridChange: (show: boolean) => void;
+  onToggleFullscreen?: () => void;
 }
 
 export default function QuadView({
@@ -74,6 +77,9 @@ export default function QuadView({
   undoKey = 0,
   showCrosshairs = true,
   onShowCrosshairsChange,
+  showGrid,
+  onShowGridChange,
+  onToggleFullscreen,
 }: QuadViewProps) {
   const [dims] = useState(() => volume.dims);
 
@@ -89,8 +95,6 @@ export default function QuadView({
     clearKey: measurementClearKey,
     undoKey,
   });
-
-  const [showGrid, setShowGrid] = useState(true);
 
   useEffect(() => {
     setCrosshair({
@@ -202,6 +206,7 @@ export default function QuadView({
         border: '1px solid rgba(255, 255, 255, 0.06)',
         borderRadius: '8px',
         flexShrink: 0,
+        position: 'relative',
       }}>
         {/* Controls Pill Group */}
         <div style={{
@@ -252,7 +257,7 @@ export default function QuadView({
             <input
               type="checkbox"
               checked={showGrid}
-              onChange={(e) => setShowGrid(e.target.checked)}
+              onChange={(e) => onShowGridChange(e.target.checked)}
               style={{
                 width: '12px',
                 height: '12px',
@@ -312,6 +317,39 @@ export default function QuadView({
             Clear
           </button>
         </div>
+
+        {/* Fullscreen toggle */}
+        {onToggleFullscreen && (
+          <button
+            onClick={onToggleFullscreen}
+            title="Expand 3D view"
+            style={{
+              position: 'absolute',
+              right: '8px',
+              width: '20px',
+              height: '20px',
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '4px',
+              color: 'hsl(var(--foreground) / 0.7)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+              transition: 'background 0.15s ease',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+          >
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <polyline points="15 3 21 3 21 9"/>
+              <polyline points="9 21 3 21 3 15"/>
+              <line x1="21" y1="3" x2="14" y2="10"/>
+              <line x1="3" y1="21" x2="10" y2="14"/>
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Quad Grid */}
@@ -377,6 +415,7 @@ export default function QuadView({
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flexShrink: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+              <span style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>Zoom</span>
               <button
                 onClick={handleZoomOut}
                 style={{
@@ -451,6 +490,7 @@ export default function QuadView({
                 style={{ width: '60px', minWidth: '30px', accentColor: 'hsl(340 55% 52%)', height: '4px', flexShrink: 1 }}
               />
             </div>
+
           </div>
         </div>
         <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>

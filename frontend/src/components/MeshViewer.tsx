@@ -64,9 +64,9 @@ function CrosshairLines({ position, size }: CrosshairLinesProps) {
   const halfSize = size / 2;
 
   // Convert normalized position to actual coordinates
-  // Mesh uses LPS with Y negated for display, so negate Y to match
-  const posX = position.x * halfSize;
-  const posY = -position.y * halfSize;
+  // Negate X to match slice viewer conventions
+  const posX = -position.x * halfSize;
+  const posY = position.y * halfSize;
   const posZ = position.z * halfSize;
 
   // Use key to force re-render when position changes (buffer geometry doesn't auto-update)
@@ -295,11 +295,11 @@ function Scene({ studyId, stlFiles, meshState, onZoomHandlersReady, onZoomChange
 
   return (
     <>
-      {/* Camera - bottom of brain facing user, back at bottom, front at top, 63% zoom */}
+      {/* Camera - bottom of brain facing user, back at bottom, front at top, 50% zoom */}
       <PerspectiveCamera
         ref={cameraRef}
         makeDefault
-        position={[0, 0, -216]}
+        position={[0, 0, -275]}
         up={[0, 1, 0]}
         fov={50}
       />
