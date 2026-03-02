@@ -155,7 +155,7 @@ export function getSlice(
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const srcIdx = x + y * dimX + z * dimX * dimY;
-        const dstIdx = (x + (height - 1 - y) * width) * 4; // Flip Y for display - necessary for NifTI & HTML Canvas mismatch
+        const dstIdx = (x + (height - 1 - y) * width) * 4; // Flip Y for display - necessary for NIfTI & HTML Canvas mismatch
         const val = Math.round(((data[srcIdx] - min) / range) * 255);
         sliceArray[dstIdx] = val;
         sliceArray[dstIdx + 1] = val;
